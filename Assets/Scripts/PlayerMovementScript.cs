@@ -85,28 +85,35 @@ public class PlayerMovementScript : MonoBehaviour {
         }
 	}
 
-    private void HandleInput() {	
-		// Handle mouse click
-		if (Input.GetMouseButtonDown(0)) {
-			HandleMouseClick();
-			return;
-		}
-		
-        if (Input.GetKeyDown(KeyCode.W)) {
-            Move(new Vector3(0, 0, 1));
+    private void HandleInput()
+    {
+        // Handle mouse click
+        if (Input.GetMouseButtonDown(0))
+        {
+            HandleMouseClick();
+            return;
         }
-        else if (Input.GetKeyDown(KeyCode.S)) {
-            Move(new Vector3(0, 0, -1));
+
+        else if (Input.GetKeyDown(KeyCode.W))
+        { // Изменено F на W для стандартного движения вперёд
+            Move(new Vector3(0, 0, 2)); // Замените 1 на 3 для соответствия шагу по клику
         }
-        else if (Input.GetKeyDown(KeyCode.A)) {
+        else if (Input.GetKeyDown(KeyCode.S))
+        {
+            Move(new Vector3(0, 0, -1)); // Замените 1 на 3 для соответствия шагу по клику
+        }
+        else if (Input.GetKeyDown(KeyCode.A))
+        {
             if (Mathf.RoundToInt(current.x) > minX)
-                Move(new Vector3(-1, 0, 0));
+                Move(new Vector3(-1, 0, 0)); // Замените 1 на 3 для соответствия шагу по клику
         }
-        else if (Input.GetKeyDown(KeyCode.D)) {
+        else if (Input.GetKeyDown(KeyCode.D))
+        {
             if (Mathf.RoundToInt(current.x) < maxX)
-                Move(new Vector3(1, 0, 0));
+                Move(new Vector3(2, 0, 0)); // Замените 1 на 3 для соответствия шагу по клику
         }
     }
+
 
     private void Move(Vector3 distance) {
         var newPosition = current + distance;
