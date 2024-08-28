@@ -2,49 +2,72 @@
 using System.Collections;
 
 [RequireComponent(typeof(PlayerMovementScript))]
-public class CameraMovementScript : MonoBehaviour {
-
+public class CameraMovementScript : MonoBehaviour
+{
     public float minZ = 0.0f;
     public float speedIncrementZ = 1.0f;
     public float speedOffsetZ = 4.0f;
-    public bool moving = false;
+    public bool moving = true;
+    public float gameOverDistance = -1.0f; // Дистанция до игрока для game over
+    public GameObject Menu;
 
     private GameObject player;
-    private PlayerMovementScript playerMovement;
+    public PlayerMovementScript playerMovement;
+    private GameStateControllerScript gameStateController;
 
     private Vector3 offset;
     private Vector3 initialOffset;
 
-    public void Start() {
+    public void Start()
+    {
         player = GameObject.FindGameObjectWithTag("Player");
-        playerMovement = player.GetComponent<PlayerMovementScript>();
+        gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
 
-        // TODO this position and rotation is baked, extract it
-        initialOffset = new Vector3(2.5f, 10.0f, -7.5f);
+        initialOffset = new Vector3(3f, 10.0f, -7.5f);
         offset = initialOffset;
-	}
-	
-    public void Update() {
-        if (moving) {
+    }
+
+    public void Update()
+    {
+        if (Menu.activeInHierarchy)
+        {
+            return; // Если объект включен, остановить движение камеры
+        }
+
+        if (moving)
+        {
             Vector3 playerPosition = player.transform.position;
             transform.position = new Vector3(playerPosition.x, 0, Mathf.Max(minZ, playerPosition.z)) + offset;
 
-            // Increase z over time if moving.
             offset.z += speedIncrementZ * Time.deltaTime;
 
-            // Increase/decrease z when player is moving south/north.
-            if (playerMovement.IsMoving) {
-                if (playerMovement.MoveDirection == "north") {
+            if (playerMovement.IsMoving)
+            {
+                if (playerMovement.MoveDirection == "north")
+                {
                     offset.z -= speedOffsetZ * Time.deltaTime;
                 }
             }
-        }
-	}
 
-    public void Reset() {
-        // TODO This kind of reset is dirty, refactor might be needed.
+            // Проверка на Game Over
+            if (transform.position.z > player.transform.position.z - gameOverDistance)
+            {
+                GameOver();
+            }
+        }
+    }
+
+    public void Reset()
+    {
         moving = false;
         offset = initialOffset;
-        transform.position = new Vector3(2.5f, 10.0f, -7.5f);
+        transform.position = player.transform.position + initialOffset;
+    }
+
+    private void GameOver()
+    {
+        moving = false;
+        playerMovement.GameOver(); // Останавливаем игрока
+        gameStateController.GameOver(); // Активируем Game Over
     }
 }

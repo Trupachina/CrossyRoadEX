@@ -100,12 +100,12 @@ public class PlayerMovementScript : MonoBehaviour {
         }
         else if (Input.GetKeyDown(KeyCode.S))
         {
-            Move(new Vector3(0, 0, -1)); // Замените 1 на 3 для соответствия шагу по клику
+            Move(new Vector3(0, 0, -2)); // Замените 1 на 3 для соответствия шагу по клику
         }
         else if (Input.GetKeyDown(KeyCode.A))
         {
             if (Mathf.RoundToInt(current.x) > minX)
-                Move(new Vector3(-1, 0, 0)); // Замените 1 на 3 для соответствия шагу по клику
+                Move(new Vector3(-2, 0, 0)); // Замените 1 на 3 для соответствия шагу по клику
         }
         else if (Input.GetKeyDown(KeyCode.D))
         {

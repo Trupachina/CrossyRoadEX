@@ -34,7 +34,7 @@ public class GameStateControllerScript : MonoBehaviour
         {
             topScore.text = PlayerPrefs.GetInt("Top").ToString();
             playScore.text = score.ToString();
-            playerName.text = PlayerPrefs.GetString("Name");
+            //playerName.text = PlayerPrefs.GetString("Name");
         }
         else if (state == "mainmenu")
         {

@@ -2,10 +2,12 @@
 using System.Collections;
 using System.Collections.Generic;
 
-public class LevelControllerScript : MonoBehaviour {
+public class LevelControllerScript : MonoBehaviour
+{
     public int minZ = 3;
     public int lineAhead = 40;
     public int lineBehind = 20;
+    public float destroyDelay = 5f; // Время задержки перед удалением линии
 
     public GameObject[] linePrefabs;
     public GameObject coins;
@@ -14,27 +16,32 @@ public class LevelControllerScript : MonoBehaviour {
 
     private GameObject player;
 
-    public void Start() {
+    public void Start()
+    {
         player = GameObject.FindGameObjectWithTag("Player");
         lines = new Dictionary<int, GameObject>();
-	}
-	
-    public void Update() {
-        // Generate lines based on player position.
+    }
+
+    public void Update()
+    {
+        // Генерация линий на основе позиции игрока
         var playerZ = (int)player.transform.position.z;
-        for (var z = Mathf.Max(minZ, playerZ - lineBehind); z <= playerZ + lineAhead; z += 1) {
-            if (!lines.ContainsKey(z)) {
+        for (var z = Mathf.Max(minZ, playerZ - lineBehind); z <= playerZ + lineAhead; z += 1)
+        {
+            if (!lines.ContainsKey(z))
+            {
                 GameObject coin;
                 int x = Random.Range(0, 2);
-                if (x == 1) {
+                if (x == 1)
+                {
                     coin = (GameObject)Instantiate(coins);
-                    int randX = Random.Range(-4, 4);
+                    int randX = UnityEngine.Random.Range(-4, 4);
                     coin.transform.position = new Vector3(randX, 1, 1.5f);
                 }
 
                 var line = (GameObject)Instantiate(
                     linePrefabs[Random.Range(0, linePrefabs.Length)],
-                    new Vector3(0, 0, z * 3 - 5), 
+                    new Vector3(0, 0, z * 3 - 5),
                     Quaternion.identity
                 );
 
@@ -43,23 +50,42 @@ public class LevelControllerScript : MonoBehaviour {
             }
         }
 
-        // Remove lines based on player position.
-        foreach (var line in new List<GameObject>(lines.Values)) {
+        // Удаление линий за игроком с задержкой
+        foreach (var line in new List<GameObject>(lines.Values))
+        {
             var lineZ = line.transform.position.z;
-            if (lineZ < playerZ - lineBehind) {
-                lines.Remove((int)lineZ);
-                Destroy(line);
+            if (lineZ < playerZ - lineBehind && !IsCoroutineRunning(line))
+            {
+                StartCoroutine(DestroyLineWithDelay(line, (int)lineZ));
             }
         }
-	}
+    }
 
-    public void Reset() {
-        // TODO This kind of reset is dirty, refactor might be needed.
-        if (lines != null) {
-            foreach (var line in new List<GameObject>(lines.Values)) {
+    private bool IsCoroutineRunning(GameObject line)
+    {
+        return line.GetComponent<LineDestroyer>() != null;
+    }
+
+    private IEnumerator DestroyLineWithDelay(GameObject line, int lineZ)
+    {
+        var destroyer = line.AddComponent<LineDestroyer>();
+        yield return new WaitForSeconds(destroyDelay);
+        lines.Remove(lineZ);
+        Destroy(line);
+    }
+
+    public void Reset()
+    {
+        // Сброс уровня
+        if (lines != null)
+        {
+            foreach (var line in new List<GameObject>(lines.Values))
+            {
                 Destroy(line);
             }
             Start();
         }
     }
 }
+
+public class LineDestroyer : MonoBehaviour { }
