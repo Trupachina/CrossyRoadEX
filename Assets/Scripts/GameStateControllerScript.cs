@@ -3,6 +3,7 @@ using System.Collections;
 using UnityEngine.UI; // Исправление пространства имен для Text
 using System.IO; // Импорт для работы с файлами
 using UnityEngine.SceneManagement; // Импорт для работы с сценами
+using System.IO.Ports;
 
 public class GameStateControllerScript : MonoBehaviour
 {
@@ -22,8 +23,13 @@ public class GameStateControllerScript : MonoBehaviour
 
     public string filename = "top.txt";
 
+    SerialPort portNo = new SerialPort("COM9", 9600);
+
     public void Start()
     {
+        portNo.Open();
+        portNo.ReadTimeout = 1000;
+
         currentCanvas = null;
         MainMenu();
     }
@@ -34,26 +40,34 @@ public class GameStateControllerScript : MonoBehaviour
         {
             topScore.text = PlayerPrefs.GetInt("Top").ToString();
             playScore.text = score.ToString();
-            //playerName.text = PlayerPrefs.GetString("Name");
         }
         else if (state == "mainmenu")
         {
-            if (Input.GetButtonDown("Cancel"))
+            if (portNo.IsOpen && portNo.BytesToRead > 0)
+            {
+                try
+                {
+                    if (portNo.ReadByte() == 1) // Считываем сигнал от Arduino
+                    {
+                        Debug.Log("FUCK");
+                        Play();
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.Log("Error reading from port: " + ex.Message);
+                }
+            }
+            else if (Input.GetButtonDown("Cancel"))
             {
                 Application.Quit();
-            }
-            else if (Input.anyKeyDown)
-            {
-                Play();
             }
         }
         else if (state == "gameover")
         {
             if (Input.anyKeyDown)
             {
-                //Application.Quit();
-                SceneManager.LoadScene(0); // Исправление устаревшего метода
-                Debug.Log("A key or mouse click has been detected");
+                SceneManager.LoadScene(0);
             }
         }
     }
@@ -65,9 +79,7 @@ public class GameStateControllerScript : MonoBehaviour
 
         GameObject.Find("LevelController").SendMessage("Reset");
         GameObject.FindGameObjectWithTag("Player").SendMessage("Reset");
-        //GameObject.FindGameObjectWithTag("MainCamera").SendMessage("Reset");
 
-        File.SetAttributes(Application.dataPath + "/" + filename, FileAttributes.Normal);
         StreamReader sr = new StreamReader(Application.dataPath + "/" + filename);
         string fileContent = sr.ReadLine();
         sr.Close();
@@ -93,8 +105,8 @@ public class GameStateControllerScript : MonoBehaviour
         gameOverScore.text = score.ToString();
         if (score > top)
         {
-            top = score; // Обновление рекорда
-            PlayerPrefs.SetInt("Top", top); // Сохранение рекорда в PlayerPrefs
+            top = score;
+            PlayerPrefs.SetInt("Top", top);
             var sw = File.CreateText(Application.dataPath + "/" + filename);
             sw.Write(top);
             sw.Close();
