@@ -15,6 +15,10 @@ public class PlayerMovementScript : MonoBehaviour {
     public float leftRotation = -45.0f;
     public float rightRotation = 90.0f;
 
+    public AudioSource moveSound;
+
+    public GameObject Menu;
+
     private bool moving;
     private float elapsedTime;
 
@@ -42,6 +46,12 @@ public class PlayerMovementScript : MonoBehaviour {
     }
 
     public void Update() {
+
+        if (Menu.activeInHierarchy)
+        {
+            return;
+        }
+
         // If player is moving, update the player position, else receive input from user.
         if (moving)
             MovePlayer();
@@ -156,7 +166,8 @@ public class PlayerMovementScript : MonoBehaviour {
         }
     }
 
-    private void MovePlayer() {
+    private void MovePlayer()
+    {
         elapsedTime += Time.deltaTime;
 
         float weight = (elapsedTime < timeForMove) ? (elapsedTime / timeForMove) : 1;
@@ -165,25 +176,33 @@ public class PlayerMovementScript : MonoBehaviour {
         float y = Sinerp(current.y, startY + jumpHeight, weight);
 
         Vector3 result = new Vector3(x, y, z);
-        transform.position = result; // note to self: why using transform produce better movement?
-        //body.MovePosition(result);
+        transform.position = result;
 
-        if (result == target) {
+        if (!moveSound.isPlaying && moving)
+        {
+            moveSound.Play();  // Воспроизводим звук при начале движения
+        }
+
+        if (result == target)
+        {
             moving = false;
-            current = target;
             body.isKinematic = false;
             body.AddForce(0, -10, 0, ForceMode.VelocityChange);
+            moveSound.Stop();  // Останавливаем звук после завершения движения
 
-            // Return arm and leg to original position.
-            foreach (var o in leftSide) {
+            // Возвращаем руки и ноги в исходное положение
+            foreach (var o in leftSide)
+            {
                 o.transform.rotation = Quaternion.identity;
             }
 
-            foreach (var o in rightSide) {
+            foreach (var o in rightSide)
+            {
                 o.transform.rotation = Quaternion.identity;
             }
         }
     }
+
 
     private float Lerp(float min, float max, float weight) {
         return min + (max - min) * weight;

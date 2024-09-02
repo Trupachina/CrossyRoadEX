@@ -1,8 +1,8 @@
 ﻿using UnityEngine;
 using System.Collections;
-using UnityEngine.UI; // Исправление пространства имен для Text
-using System.IO; // Импорт для работы с файлами
-using UnityEngine.SceneManagement; // Импорт для работы с сценами
+using UnityEngine.UI;
+using System.IO;
+using UnityEngine.SceneManagement;
 using System.IO.Ports;
 
 public class GameStateControllerScript : MonoBehaviour
@@ -15,6 +15,7 @@ public class GameStateControllerScript : MonoBehaviour
     public Text gameOverScore;
     public Text topScore;
     public Text playerName;
+    public Text timerText; // Счётчик времени на экране
 
     public int score, top;
 
@@ -22,15 +23,20 @@ public class GameStateControllerScript : MonoBehaviour
     private string state;
 
     public string filename = "top.txt";
+    public AudioSource GameOverSound;
 
-    SerialPort portNo = new SerialPort("COM9", 9600);
+    private SerialPort portNo = new SerialPort("COM9", 9600);
+
+    private float gameStartTime; // Время начала игры
+    public float gameTimeLimit = 180f; // Лимит времени в секундах (3 минуты)
+    private bool gameStarted = false;
+    private bool isGameOver = false;
 
     public void Start()
     {
         portNo.Open();
         portNo.ReadTimeout = 1000;
-
-        currentCanvas = null;
+        currentCanvas = mainMenuCanvas;
         MainMenu();
     }
 
@@ -38,6 +44,27 @@ public class GameStateControllerScript : MonoBehaviour
     {
         if (state == "play")
         {
+            if (!gameStarted)
+            {
+                gameStartTime = Time.time; // Устанавливаем время старта игры
+                gameStarted = true;
+            }
+
+            // Обновляем текст таймера
+            float remainingTime = gameTimeLimit - (Time.time - gameStartTime);
+            timerText.text = "Time: " + Mathf.Floor(remainingTime).ToString();
+
+            // Если время закончилось, возвращаемся в главное меню
+            if (remainingTime <= 0)
+            {
+                GameOver();
+                state = "mainmenu";
+                MainMenu();
+                GameObject.Find("LevelController").SendMessage("Reset");
+                GameObject.FindGameObjectWithTag("Player").SendMessage("Reset");
+                return;
+            }
+
             topScore.text = PlayerPrefs.GetInt("Top").ToString();
             playScore.text = score.ToString();
         }
@@ -47,9 +74,8 @@ public class GameStateControllerScript : MonoBehaviour
             {
                 try
                 {
-                    if (portNo.ReadByte() == 1) // Считываем сигнал от Arduino
+                    if (portNo.ReadByte() == 1)
                     {
-                        Debug.Log("FUCK");
                         Play();
                     }
                 }
@@ -68,7 +94,13 @@ public class GameStateControllerScript : MonoBehaviour
             if (Input.anyKeyDown)
             {
                 SceneManager.LoadScene(0);
+                state = "mainmenu";
+                MainMenu();
+                GameObject.Find("LevelController").SendMessage("Reset");
+                GameObject.FindGameObjectWithTag("Player").SendMessage("Reset");
             }
+
+            
         }
     }
 
@@ -76,6 +108,7 @@ public class GameStateControllerScript : MonoBehaviour
     {
         CurrentCanvas = mainMenuCanvas;
         state = "mainmenu";
+        gameStarted = false;
 
         GameObject.Find("LevelController").SendMessage("Reset");
         GameObject.FindGameObjectWithTag("Player").SendMessage("Reset");
@@ -101,6 +134,9 @@ public class GameStateControllerScript : MonoBehaviour
     {
         CurrentCanvas = gameOverCanvas;
         state = "gameover";
+        isGameOver = true;
+
+        GameOverSound.Play();
 
         gameOverScore.text = score.ToString();
         if (score > top)
