@@ -38,13 +38,13 @@ public class RoadCarGenerator : MonoBehaviour {
 
             // TODO extract 0.375f and -0.5f to outside -- probably along with genericization
             var position = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.6f, 0);
-            var o = (GameObject)Instantiate(carPrefabs[Random.Range(0, carPrefabs.Length)], position, Quaternion.Euler(-90, 90, 0));
+            var o = (GameObject)Instantiate(carPrefabs[Random.Range(0, carPrefabs.Length)], position, Quaternion.Euler(0, 0, 0));
             o.GetComponent<CarScript>().speedX = (int)direction * speed;
 
             if (direction < 0)
-                o.transform.rotation = Quaternion.Euler(-90, 270, 0);
+                o.transform.rotation = Quaternion.Euler(0, 270, 0);
             else
-                o.transform.rotation = Quaternion.Euler(-90, 90, 0);
+                o.transform.rotation = Quaternion.Euler(0, 90, 0);
             
             cars.Add(o);
         }

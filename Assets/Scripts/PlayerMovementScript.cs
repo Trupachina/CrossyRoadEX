@@ -106,11 +106,11 @@ public class PlayerMovementScript : MonoBehaviour {
 
         else if (Input.GetKeyDown(KeyCode.W))
         { // Изменено F на W для стандартного движения вперёд
-            Move(new Vector3(0, 0, 2)); // Замените 1 на 3 для соответствия шагу по клику
+            Move(new Vector3(0, 0, 3.2f)); // Замените 1 на 3 для соответствия шагу по клику
         }
         else if (Input.GetKeyDown(KeyCode.S))
         {
-            Move(new Vector3(0, 0, -2)); // Замените 1 на 3 для соответствия шагу по клику
+            Move(new Vector3(0, 0, -3.2f)); // Замените 1 на 3 для соответствия шагу по клику
         }
         else if (Input.GetKeyDown(KeyCode.A))
         {
