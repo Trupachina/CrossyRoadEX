@@ -5,10 +5,10 @@ using System.Collections;
 public class CameraMovementScript : MonoBehaviour
 {
     public float minZ = 0.0f;
-    public float speedIncrementZ = 1.0f;
-    public float speedOffsetZ = 4.0f;
-    public bool moving = true;
-    public float gameOverDistance = -1.0f; // Дистанция до игрока для game over
+    public float speedIncrementZ = 0.3f;
+    public float speedOffsetZ = 1.5f;
+    public bool moving = false;
+    public float gameOverDistance = -1.5f; // Дистанция до игрока для game over
     public GameObject Menu;
 
     private GameObject player;
@@ -17,14 +17,17 @@ public class CameraMovementScript : MonoBehaviour
 
     private Vector3 offset;
     private Vector3 initialOffset;
+    private bool isCatchingUp = false;
 
     public void Start()
     {
         player = GameObject.FindGameObjectWithTag("Player");
         gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
 
-        initialOffset = new Vector3(3f, 10.0f, -7.5f);
+        initialOffset = new Vector3(3.36f, 7.32f, -4.76f);
         offset = initialOffset;
+
+        StartCoroutine(DelayedCameraCatchUp());
     }
 
     public void Update()
@@ -34,7 +37,7 @@ public class CameraMovementScript : MonoBehaviour
             return; // Если объект включен, остановить движение камеры
         }
 
-        if (moving)
+        if (moving && isCatchingUp) // Камера движется после задержки
         {
             Vector3 playerPosition = player.transform.position;
             transform.position = new Vector3(playerPosition.x, 0, Mathf.Max(minZ, playerPosition.z)) + offset;
@@ -57,11 +60,21 @@ public class CameraMovementScript : MonoBehaviour
         }
     }
 
+    IEnumerator DelayedCameraCatchUp()
+    {
+        yield return new WaitForSeconds(1.0f); // Задержка на 1 секунду
+        isCatchingUp = true; // Камера начинает двигаться
+    }
+
     public void Reset()
     {
+        // Останавливаем движение камеры
         moving = false;
-        offset = initialOffset;
-        transform.position = player.transform.position + initialOffset;
+        isCatchingUp = false; // Сброс догоняющего состояния
+        offset = initialOffset; // Возвращаем смещение камеры в начальное положение
+        transform.position = player.transform.position + initialOffset; // Ставим камеру на начальную позицию относительно игрока
+
+        StartCoroutine(DelayedCameraCatchUp()); // Снова запускаем задержку для плавного начала
     }
 
     private void GameOver()
