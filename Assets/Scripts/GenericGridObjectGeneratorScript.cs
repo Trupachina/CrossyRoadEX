@@ -14,21 +14,11 @@ public class GenericGridObjectGeneratorScript : MonoBehaviour
 
     public GameObject[] prefabs;
 
-    // Диапазоны для рандомизации масштаба (размеров) объектов
-    public Vector3 minScale = new Vector3(30f, 30f, 30f);
-    public Vector3 maxScale = new Vector3(40f, 40f, 40f);
-
     private List<GameObject> generatedObjects;
 
     public void Start()
     {
         generatedObjects = new List<GameObject>();
-
-        if (prefabs.Length == 0)
-        {
-            Debug.LogWarning("No prefabs assigned to the generator.");
-            return;
-        }
 
         for (var x = minPosition.x; x <= maxPosition.x; x += gridSize.x)
         {
@@ -36,28 +26,14 @@ public class GenericGridObjectGeneratorScript : MonoBehaviour
             {
                 for (var z = minPosition.z; z <= maxPosition.z; z += gridSize.z)
                 {
-                    if (Random.value < density)
+                    bool generate = Random.value < density;
+                    if (generate)
                     {
                         GameObject prefab = prefabs[Random.Range(0, prefabs.Length)];
+                        var o = (GameObject)Instantiate(prefab, relative ? transform.position + new Vector3(x, y, z) : new Vector3(x, y, z), Quaternion.identity);
 
-                        // Рассчитываем позицию с фиксированной высотой по оси Y на 0
-                        Vector3 spawnPosition = relative
-                            ? transform.position + new Vector3(x, 0, z)
-                            : new Vector3(x, 0, z);
-
-                        // Инстанцируем объект с сохранением его поворота
-                        GameObject spawnedObject = Instantiate(prefab, spawnPosition, prefab.transform.rotation);
-
-                        // Рандомизация размеров
-                        Vector3 randomScale = new Vector3(
-                            Random.Range(minScale.x, maxScale.x),
-                            Random.Range(minScale.y, maxScale.y),
-                            Random.Range(minScale.z, maxScale.z)
-                        );
-                        spawnedObject.transform.localScale = randomScale;
-
-                        generatedObjects.Add(spawnedObject);
-                        OnInstantiate(spawnedObject);
+                        generatedObjects.Add(o);
+                        OnInstantiate(o);
                     }
                 }
             }
@@ -70,16 +46,12 @@ public class GenericGridObjectGeneratorScript : MonoBehaviour
         {
             foreach (var o in generatedObjects)
             {
-                if (o != null)
-                {
-                    Destroy(o);
-                }
+                Destroy(o);
             }
         }
     }
 
     protected virtual void OnInstantiate(GameObject o)
     {
-        // Дополнительные действия при инстанцировании (можно переопределить в дочернем классе)
     }
 }

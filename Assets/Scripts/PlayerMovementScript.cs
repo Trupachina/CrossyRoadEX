@@ -246,8 +246,8 @@ public class PlayerMovementScript : MonoBehaviour {
 
     public void Reset() {
         // TODO This kind of reset is dirty, refactor might be needed.
-        transform.position = new Vector3(0, 1, 0);
-        transform.localScale = new Vector3(1, 1, 1);
+        transform.position = new Vector3(0.44f, 1f, -0.16f);
+        transform.localScale = new Vector3(1, 1, 1.13f);
         transform.rotation = Quaternion.identity;
         score = 0;
     }

@@ -50,12 +50,17 @@ public class GameStateControllerScript : MonoBehaviour
     private GameObject mainCamera;
     public float cameraGameOverDistance = -1.5f; // Определяет расстояние между камерой и игроком для смерти
 
+    public GameObject StartText;
+    public GameObject InstructionsText;
+    bool canStartGame = false;
+
     public void Start()
     {
-        //OpenPort();  // Открываем порт
+        OpenPort();  // Открываем порт
         currentCanvas = mainMenuCanvas;
         player = GameObject.FindGameObjectWithTag("Player");
         mainCamera = GameObject.FindGameObjectWithTag("MainCamera"); // Инициализируем камеру
+        StartText.SetActive(false);
         MainMenu();
     }
 
@@ -73,9 +78,10 @@ public class GameStateControllerScript : MonoBehaviour
             timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
             livesText.text = "Жизни: " + lives.ToString();
 
-            if (remainingTime <= 0 && gameTimeLimit > 0)  // Если время истекло и лимит времени включен
+            if (remainingTime < 0 && gameTimeLimit > 0)  // Если время истекло и лимит времени включен
             {
                 // Обрабатываем истечение времени как смерть
+                lives = 0;
                 diedFromTime = true;
                 GameOver();
                 return;
@@ -87,49 +93,81 @@ public class GameStateControllerScript : MonoBehaviour
             // Проверка, не догнала ли камера игрока
             CheckCameraProximity();
 
-            // Добавляем проверку, сколько байт пришло с порта
-            //if (portNo.IsOpen && portNo.BytesToRead > 0)
-            //{
-                //Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
-                //try
-                //{
-                    //int byteRead = portNo.ReadByte();
+            //Добавляем проверку, сколько байт пришло с порта
+            if (portNo.IsOpen && portNo.BytesToRead > 0)
+            {
+                Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
+                try
+                {
+                    int byteRead = portNo.ReadByte();
 
+                    if (byteRead == 1)
+                    {
+                        IncreaseLives();
+                    }
                     // Если игра уже запущена, увеличиваем количество жизней на значение из livesFromTicket
                     //IncreaseLives();
-                //}
-                //catch (System.Exception ex)
-                //{
-                    //Debug.Log("Ошибка чтения порта: " + ex.Message);
-                //}
-            //}
-        }
-        else if (state == "mainmenu")
-        {
-            //if (portNo.IsOpen && portNo.BytesToRead > 0)
-            //{
-                //Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
-                //try
-                //{
-                    //int byteRead = portNo.ReadByte();
-
-                    // Если байт = 1, то запускаем игру
-                    //if (byteRead == 1)
-                    //{
-                        //Play();
-                    //}
-                //}
-                //catch (System.Exception ex)
-                //{
-                    //Debug.Log("Ошибка чтения порта: " + ex.Message);
-                //}
-            //}
-
-            if (Input.GetKeyDown("space"))
-            {
-                Play();
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.Log("Ошибка чтения порта: " + ex.Message);
+                }
             }
         }
+
+        else if (state == "mainmenu")
+        {
+            
+
+            // Если порт открыт и есть данные для чтения
+            if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
+            {
+                livesText.text = "Жизни: " + 0;
+
+                Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
+                try
+                {
+                    int byteRead = portNo.ReadByte();
+
+                    // Если получен первый байт
+                    if (byteRead == 1 && !canStartGame)
+                    {
+                        // Разрешаем запуск игры
+                        canStartGame = true;
+
+                        // Показываем текст инструкций
+                        livesText.text = "Жизни: " + lives.ToString();
+                        InstructionsText.SetActive(false);
+                        StartText.SetActive(true);
+
+                        Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
+                    }
+                    else if (byteRead == 1 && canStartGame)
+                    {
+                        // Если игра уже готова, добавляем жизни
+                        IncreaseLives();
+                        Debug.Log("Жизни увеличены.");
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    Debug.LogError("Ошибка чтения порта: " + ex.Message);
+                }
+            }
+
+            // Если нажата клавиша пробел, запускаем игру
+            if (canStartGame && Input.GetKeyDown("space"))
+            {
+                Play();
+                StartText.SetActive(false);
+
+                // После запуска игры запрещаем повторный запуск
+                canStartGame = false;
+
+                Debug.Log("Игра запущена.");
+            }
+        }
+
         else if (state == "gameover")
         {
             if (Input.anyKeyDown)

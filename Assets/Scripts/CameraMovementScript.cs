@@ -24,7 +24,7 @@ public class CameraMovementScript : MonoBehaviour
         player = GameObject.FindGameObjectWithTag("Player");
         gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
 
-        initialOffset = new Vector3(3.36f, 7.32f, -4.76f);
+        initialOffset = new Vector3(3.36f, 9.88f, -4.76f);
         offset = initialOffset;
 
         StartCoroutine(DelayedCameraCatchUp());
