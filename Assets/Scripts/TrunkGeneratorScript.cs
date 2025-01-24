@@ -24,8 +24,8 @@ public class TrunkGeneratorScript : MonoBehaviour {
 	    if (randomizeValues) {
             direction = Random.value < 0.5f ? Direction.Left : Direction.Right;
             speed = Random.Range(2.0f, 4.0f);
-            length = Random.Range(1, 4);
-            interval = length / speed + Random.Range(2.0f, 4.0f);
+            length = Random.Range(2, 3.3f);
+            interval = length / speed + Random.Range(2f, 4f);
         }
 
         elapsedTime = 0.0f;
@@ -38,7 +38,7 @@ public class TrunkGeneratorScript : MonoBehaviour {
         if (elapsedTime > interval) {
             elapsedTime = 0.0f;
 
-            var position = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0, 0);
+            var position = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.1f, 0);
             var o = (GameObject)Instantiate(trunkPrefab, position, Quaternion.identity);
             o.GetComponent<TrunkFloatingScript>().speedX = (int)direction * speed;
 

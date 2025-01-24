@@ -61,6 +61,27 @@ public class GameStateControllerScript : MonoBehaviour
         player = GameObject.FindGameObjectWithTag("Player");
         mainCamera = GameObject.FindGameObjectWithTag("MainCamera"); // Инициализируем камеру
         StartText.SetActive(false);
+
+        // Читаем лучший результат из файла или PlayerPrefs
+        if (File.Exists(Application.dataPath + "/" + filename))
+        {
+            var sr = new StreamReader(Application.dataPath + "/" + filename);
+            string fileContent = sr.ReadLine();
+            sr.Close();
+
+            if (int.TryParse(fileContent, out int loadedTop))
+            {
+                top = loadedTop;
+            }
+        }
+        else
+        {
+            top = PlayerPrefs.GetInt("Top", 0);
+        }
+
+        // Отображаем лучший результат
+        topScore.text = "Топ: " + top;
+
         MainMenu();
     }
 
@@ -87,7 +108,7 @@ public class GameStateControllerScript : MonoBehaviour
                 return;
             }
 
-            topScore.text = PlayerPrefs.GetInt("Top").ToString();
+            topScore.text = "Топ: " + PlayerPrefs.GetInt("Top").ToString();
             playScore.text = score.ToString();
 
             // Проверка, не догнала ли камера игрока
@@ -166,6 +187,18 @@ public class GameStateControllerScript : MonoBehaviour
 
                 Debug.Log("Игра запущена.");
             }
+
+            if (Input.GetKeyDown("space"))
+            {
+                Play();
+                StartText.SetActive(false);
+
+                // После запуска игры запрещаем повторный запуск
+                canStartGame = false;
+
+                Debug.Log("Игра запущена.");
+            }
+
         }
 
         else if (state == "gameover")
@@ -206,11 +239,26 @@ public class GameStateControllerScript : MonoBehaviour
         GameObject.Find("LevelController").SendMessage("Reset");
         player.SendMessage("Reset");
 
-        StreamReader sr = new StreamReader(Application.dataPath + "/" + filename);
-        string fileContent = sr.ReadLine();
-        sr.Close();
+        // Читаем лучший результат из файла
+        if (File.Exists(Application.dataPath + "/" + filename))
+        {
+            var sr = new StreamReader(Application.dataPath + "/" + filename);
+            string fileContent = sr.ReadLine();
+            sr.Close();
 
-        topScore.text = fileContent;
+            if (int.TryParse(fileContent, out int loadedTop))
+            {
+                top = loadedTop;
+            }
+        }
+        else
+        {
+            // Если файла нет, загружаем из PlayerPrefs
+            top = PlayerPrefs.GetInt("Top", 0); // 0 по умолчанию
+        }
+
+        // Выводим лучший результат
+        topScore.text = "Топ: " + top;
     }
 
     public void Play()
@@ -246,6 +294,7 @@ public class GameStateControllerScript : MonoBehaviour
                 isGameOver = true;
 
                 gameOverSound.Play();
+
                 gameOverScore.text = score.ToString();
 
                 if (score > top)
@@ -256,6 +305,8 @@ public class GameStateControllerScript : MonoBehaviour
                     sw.Write(top);
                     sw.Close();
                 }
+
+                topScore.text = "Топ: " + top;
 
                 mainCamera.GetComponent<CameraMovementScript>().moving = false;
 

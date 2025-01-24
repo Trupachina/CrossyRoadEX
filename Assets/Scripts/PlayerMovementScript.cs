@@ -1,9 +1,10 @@
 ﻿using UnityEngine;
 using System.Collections;
 
-public class PlayerMovementScript : MonoBehaviour {
+public class PlayerMovementScript : MonoBehaviour
+{
     public bool canMove = false;
-    public float timeForMove = 0.2f;
+    public float timeForMove = 0.2f; // Время для движения
     public float jumpHeight = 1.0f;
 
     public int minX = -4;
@@ -32,7 +33,11 @@ public class PlayerMovementScript : MonoBehaviour {
     private GameStateControllerScript gameStateController;
     private int score;
 
-    public void Start() {
+    private float moveCooldown = 0.3f; // Минимальное время между движениями
+    private float lastMoveTime = 0f;  // Время последнего движения
+
+    public void Start()
+    {
         current = transform.position;
         moving = false;
         startY = transform.position.y;
@@ -45,91 +50,67 @@ public class PlayerMovementScript : MonoBehaviour {
         gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
     }
 
-    public void Update() {
-
+    public void Update()
+    {
         if (Menu.activeInHierarchy)
         {
             return;
         }
 
-        // If player is moving, update the player position, else receive input from user.
+        // Если игрок движется, обновляем позицию, иначе обрабатываем ввод.
         if (moving)
+        {
             MovePlayer();
-        else {
-            // Update current to match integer position (not fractional).
+        }
+        else
+        {
+            // Округляем позицию игрока до ближайшего целого числа (чтобы избежать дробных значений).
             current = new Vector3(Mathf.Round(transform.position.x), Mathf.Round(transform.position.y), Mathf.Round(transform.position.z));
 
             if (canMove)
                 HandleInput();
         }
 
+        // Обновляем счёт
         score = Mathf.Max(score, (int)current.z);
         gameStateController.score = score / 3;
     }
-	
-	private void HandleMouseClick() {
-		RaycastHit hit;
-		Ray ray = Camera.main.ScreenPointToRay(Input.mousePosition);
-		
-		if (Physics.Raycast(ray, out hit)) {
-			var direction = hit.point - transform.position;
-			var x = direction.x;
-			var z = direction.z;
-			
-			if (Mathf.Abs(z) > Mathf.Abs(x)) {
-				if (z > 0)
-					Move(new Vector3(0, 0, 3));
-                else
-					Move(new Vector3(0, 0, -3));
-			}
-            else { // (Mathf.Abs(z) < Mathf.Abs(x))
-				if (x > 0) {
-					if (Mathf.RoundToInt(current.x) < maxX)
-						Move(new Vector3(3, 0, 0));
-				}
-                else { // (x < 0)
-					if (Mathf.RoundToInt(current.x) > minX)
-						Move(new Vector3(-3, 0, 0));
-				}
-			}
-        }
-	}
 
     private void HandleInput()
     {
-        // Handle mouse click
-        if (Input.GetMouseButtonDown(0))
+        // Игнорируем ввод, если игрок движется или прошло недостаточно времени с последнего движения
+        if (moving || Time.time - lastMoveTime < moveCooldown)
         {
-            HandleMouseClick();
             return;
         }
 
-        else if (Input.GetKeyDown(KeyCode.W))
-        { // Изменено F на W для стандартного движения вперёд
-            Move(new Vector3(0, 0, 3.2f)); // Замените 1 на 3 для соответствия шагу по клику
+        // Обработка нажатий клавиш
+        if (Input.GetKeyDown(KeyCode.W))
+        {
+            Move(new Vector3(0, 0, 3.2f));
         }
         else if (Input.GetKeyDown(KeyCode.S))
         {
-            Move(new Vector3(0, 0, -3.2f)); // Замените 1 на 3 для соответствия шагу по клику
+            Move(new Vector3(0, 0, -3.2f));
         }
         else if (Input.GetKeyDown(KeyCode.A))
         {
             if (Mathf.RoundToInt(current.x) > minX)
-                Move(new Vector3(-2, 0, 0)); // Замените 1 на 3 для соответствия шагу по клику
+                Move(new Vector3(-2, 0, 0));
         }
         else if (Input.GetKeyDown(KeyCode.D))
         {
             if (Mathf.RoundToInt(current.x) < maxX)
-                Move(new Vector3(2, 0, 0)); // Замените 1 на 3 для соответствия шагу по клику
+                Move(new Vector3(2, 0, 0));
         }
     }
 
-
-    private void Move(Vector3 distance) {
+    private void Move(Vector3 distance)
+    {
         var newPosition = current + distance;
 
-        // Don't move if blocked by obstacle.
-        if (Physics.CheckSphere(newPosition + new Vector3(0.0f, 0.5f, 0.0f), 0.1f)) 
+        // Проверка на наличие препятствия
+        if (Physics.CheckSphere(newPosition + new Vector3(0.0f, 0.5f, 0.0f), 0.1f))
             return;
 
         target = newPosition;
@@ -137,9 +118,13 @@ public class PlayerMovementScript : MonoBehaviour {
         moving = true;
         elapsedTime = 0;
         body.isKinematic = true;
-        print(MoveDirection);
 
-        switch (MoveDirection) {
+        // Запоминаем время последнего движения
+        lastMoveTime = Time.time;
+
+        // Обновляем направление игрока
+        switch (MoveDirection)
+        {
             case "north":
                 mesh.transform.rotation = Quaternion.Euler(0, 0, 0);
                 break;
@@ -156,12 +141,14 @@ public class PlayerMovementScript : MonoBehaviour {
                 break;
         }
 
-        // Rotate arm and leg.
-        foreach (var o in leftSide) {
+        // Анимация движения конечностей
+        foreach (var o in leftSide)
+        {
             o.transform.Rotate(leftRotation, 0, 0);
         }
 
-        foreach (var o in rightSide) {
+        foreach (var o in rightSide)
+        {
             o.transform.Rotate(rightRotation, 0, 0);
         }
     }
@@ -180,7 +167,7 @@ public class PlayerMovementScript : MonoBehaviour {
 
         if (!moveSound.isPlaying && moving)
         {
-            moveSound.Play();  // Воспроизводим звук при начале движения
+            moveSound.Play(); // Воспроизводим звук при начале движения
         }
 
         if (result == target)
@@ -188,9 +175,9 @@ public class PlayerMovementScript : MonoBehaviour {
             moving = false;
             body.isKinematic = false;
             body.AddForce(0, -10, 0, ForceMode.VelocityChange);
-            moveSound.Stop();  // Останавливаем звук после завершения движения
+            moveSound.Stop(); // Останавливаем звук после завершения движения
 
-            // Возвращаем руки и ноги в исходное положение
+            // Сбрасываем конечности в начальное положение
             foreach (var o in leftSide)
             {
                 o.transform.rotation = Quaternion.identity;
@@ -203,23 +190,27 @@ public class PlayerMovementScript : MonoBehaviour {
         }
     }
 
-
-    private float Lerp(float min, float max, float weight) {
+    private float Lerp(float min, float max, float weight)
+    {
         return min + (max - min) * weight;
     }
 
-    private float Sinerp(float min, float max, float weight) {
+    private float Sinerp(float min, float max, float weight)
+    {
         return min + (max - min) * Mathf.Sin(weight * Mathf.PI);
     }
 
-    public bool IsMoving {
+    public bool IsMoving
+    {
         get { return moving; }
     }
 
-    public string MoveDirection {
+    public string MoveDirection
+    {
         get
         {
-            if (moving) {
+            if (moving)
+            {
                 float dx = target.x - current.x;
                 float dz = target.z - current.z;
                 if (dz > 0)
@@ -236,16 +227,14 @@ public class PlayerMovementScript : MonoBehaviour {
         }
     }
 
-    public void GameOver() {
-        // When game over, disable moving.
+    public void GameOver()
+    {
         canMove = false;
-
-        // Call GameOver at game state controller (instead of sending messages).
         gameStateController.GameOver();
     }
 
-    public void Reset() {
-        // TODO This kind of reset is dirty, refactor might be needed.
+    public void Reset()
+    {
         transform.position = new Vector3(0.44f, 1f, -0.16f);
         transform.localScale = new Vector3(1, 1, 1.13f);
         transform.rotation = Quaternion.identity;
