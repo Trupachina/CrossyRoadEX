@@ -108,7 +108,27 @@ public class GameStateControllerScript : MonoBehaviour
                 return;
             }
 
-            topScore.text = "Топ: " + PlayerPrefs.GetInt("Top").ToString();
+            // Читаем лучший результат из файла
+            if (File.Exists(Application.dataPath + "/" + filename))
+            {
+                var sr = new StreamReader(Application.dataPath + "/" + filename);
+                string fileContent = sr.ReadLine();
+                sr.Close();
+
+                if (int.TryParse(fileContent, out int loadedTop))
+                {
+                    top = loadedTop;
+                }
+            }
+            else
+            {
+                // Если файла нет, загружаем из PlayerPrefs
+                top = PlayerPrefs.GetInt("Top", 0); // 0 по умолчанию
+            }
+
+            // Выводим лучший результат
+            topScore.text = "Топ: " + top;
+
             playScore.text = score.ToString();
 
             // Проверка, не догнала ли камера игрока
@@ -188,16 +208,16 @@ public class GameStateControllerScript : MonoBehaviour
                 Debug.Log("Игра запущена.");
             }
 
-            if (Input.GetKeyDown("space"))
-            {
-                Play();
-                StartText.SetActive(false);
+            //if (Input.GetKeyDown("space"))
+            //{
+                //Play();
+                //StartText.SetActive(false);
 
                 // После запуска игры запрещаем повторный запуск
-                canStartGame = false;
+                //canStartGame = false;
 
-                Debug.Log("Игра запущена.");
-            }
+                //Debug.Log("Игра запущена.");
+            //}
 
         }
 
