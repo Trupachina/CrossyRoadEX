@@ -24,7 +24,7 @@ public class CameraMovementScript : MonoBehaviour
         player = GameObject.FindGameObjectWithTag("Player");
         gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
 
-        initialOffset = new Vector3(3.36f, 9.88f, -4.76f);
+        initialOffset = new Vector3(3.05f, 16.56f, -7.4f);
         offset = initialOffset;
 
         StartCoroutine(DelayedCameraCatchUp());
@@ -34,22 +34,21 @@ public class CameraMovementScript : MonoBehaviour
     {
         if (Menu.activeInHierarchy)
         {
-            return; // Если объект включен, остановить движение камеры
+            return; // Если меню открыто, камера не двигается
         }
 
-        if (moving && isCatchingUp) // Камера движется после задержки
+        if (moving && isCatchingUp) // Камера движется только после задержки
         {
-            Vector3 playerPosition = player.transform.position;
-            transform.position = new Vector3(playerPosition.x, 0, Mathf.Max(minZ, playerPosition.z)) + offset;
+            Vector3 targetPosition = player.transform.position + offset;
+
+            // Используем Lerp для плавного движения камеры
+            transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * 3f);
 
             offset.z += speedIncrementZ * Time.deltaTime;
 
-            if (playerMovement.IsMoving)
+            if (playerMovement.IsMoving && playerMovement.MoveDirection == "north")
             {
-                if (playerMovement.MoveDirection == "north")
-                {
-                    offset.z -= speedOffsetZ * Time.deltaTime;
-                }
+                offset.z -= speedOffsetZ * Time.deltaTime;
             }
 
             // Проверка на Game Over
@@ -59,6 +58,7 @@ public class CameraMovementScript : MonoBehaviour
             }
         }
     }
+
 
     IEnumerator DelayedCameraCatchUp()
     {

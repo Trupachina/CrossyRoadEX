@@ -14,6 +14,7 @@ public class GameStateControllerScript : MonoBehaviour
     public Text playScore;
     public Text gameOverScore;
     public Text topScore;
+    public Text topScore1;
     public Text timerText;
     public Text livesText;
 
@@ -50,9 +51,13 @@ public class GameStateControllerScript : MonoBehaviour
     private GameObject mainCamera;
     public float cameraGameOverDistance = -1.5f; // Определяет расстояние между камерой и игроком для смерти
 
+    public GameObject TopScore1;
+    public GameObject TopScore;
     public GameObject StartText;
     public GameObject InstructionsText;
     bool canStartGame = false;
+
+    private bool resetScoreFlag = false;
 
     public void Start()
     {
@@ -80,7 +85,9 @@ public class GameStateControllerScript : MonoBehaviour
         }
 
         // Отображаем лучший результат
-        topScore.text = "Топ: " + top;
+        topScore.text = "Рекорд: " + top;
+
+        topScore1.text = "Рекорд: " + top;
 
         MainMenu();
     }
@@ -89,24 +96,35 @@ public class GameStateControllerScript : MonoBehaviour
     {
         if (state == "play" && !isGameOver)
         {
+            TopScore1.SetActive(true);
+
             if (!gameStarted)
             {
                 gameStartTime = Time.time;
                 gameStarted = true;
             }
 
-            float remainingTime = gameTimeLimit - (Time.time - gameStartTime);
-            timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
-            livesText.text = "Жизни: " + lives.ToString();
-
-            if (remainingTime < 0 && gameTimeLimit > 0)  // Если время истекло и лимит времени включен
+            if (gameTimeLimit == 0)
             {
-                // Обрабатываем истечение времени как смерть
-                lives = 0;
-                diedFromTime = true;
-                GameOver();
-                return;
+                float remainingTime = gameTimeLimit + Time.time;
+                timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
             }
+            else
+            {
+                float remainingTime = gameTimeLimit - (Time.time - gameStartTime);
+                timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
+
+                if (remainingTime < 0 && gameTimeLimit > 0)  // Если время истекло и лимит времени включен
+                {
+                    // Обрабатываем истечение времени как смерть
+                    lives = 0;
+                    diedFromTime = true;
+                    GameOver();
+                    return;
+                }
+            }
+
+            livesText.text = "Жизни: " + lives.ToString();
 
             // Читаем лучший результат из файла
             if (File.Exists(Application.dataPath + "/" + filename))
@@ -127,9 +145,28 @@ public class GameStateControllerScript : MonoBehaviour
             }
 
             // Выводим лучший результат
-            topScore.text = "Топ: " + top;
-
+            topScore.text = "Рекорд: " + top;
+            
             playScore.text = score.ToString();
+
+            // Проверяем, побит ли рекорд во время игры
+            if (score > top)
+            {
+                top = score; // Обновляем рекорд
+                topScore.text = "Рекорд: " + top; // Обновляем текст на экране
+                topScore1.text = "Рекорд: " + top;
+
+                // Записываем новый рекорд в файл и PlayerPrefs
+                PlayerPrefs.SetInt("Top", top);
+                PlayerPrefs.Save();
+
+                using (StreamWriter sw = new StreamWriter(Application.dataPath + "/" + filename, false))
+                {
+                    sw.Write(top);
+                }
+
+                Debug.Log("Новый рекорд: " + top);
+            }
 
             // Проверка, не догнала ли камера игрока
             CheckCameraProximity();
@@ -158,8 +195,6 @@ public class GameStateControllerScript : MonoBehaviour
 
         else if (state == "mainmenu")
         {
-            
-
             // Если порт открыт и есть данные для чтения
             if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
             {
@@ -180,6 +215,7 @@ public class GameStateControllerScript : MonoBehaviour
                         livesText.text = "Жизни: " + lives.ToString();
                         InstructionsText.SetActive(false);
                         StartText.SetActive(true);
+                        TopScore.SetActive(false);
 
                         Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
                     }
@@ -200,7 +236,10 @@ public class GameStateControllerScript : MonoBehaviour
             if (canStartGame && Input.GetKeyDown("space"))
             {
                 Play();
+
                 StartText.SetActive(false);
+
+                TopScore.SetActive(false);
 
                 // После запуска игры запрещаем повторный запуск
                 canStartGame = false;
@@ -210,15 +249,17 @@ public class GameStateControllerScript : MonoBehaviour
 
             //if (Input.GetKeyDown("space"))
             //{
-                //Play();
-                //StartText.SetActive(false);
+            //    Play();
 
-                // После запуска игры запрещаем повторный запуск
-                //canStartGame = false;
+            //    StartText.SetActive(false);
 
-                //Debug.Log("Игра запущена.");
+            //    TopScore.SetActive(false);
+
+            //    // После запуска игры запрещаем повторный запуск
+            //    canStartGame = false;
+
+            //    Debug.Log("Игра запущена.");
             //}
-
         }
 
         else if (state == "gameover")
@@ -278,7 +319,7 @@ public class GameStateControllerScript : MonoBehaviour
         }
 
         // Выводим лучший результат
-        topScore.text = "Топ: " + top;
+        topScore.text = "Рекорд: " + top;
     }
 
     public void Play()
@@ -326,7 +367,7 @@ public class GameStateControllerScript : MonoBehaviour
                     sw.Close();
                 }
 
-                topScore.text = "Топ: " + top;
+                topScore.text = "Рекорд: " + top;
 
                 mainCamera.GetComponent<CameraMovementScript>().moving = false;
 

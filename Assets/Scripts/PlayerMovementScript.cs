@@ -36,6 +36,8 @@ public class PlayerMovementScript : MonoBehaviour
     private float moveCooldown = 0.3f; // Минимальное время между движениями
     private float lastMoveTime = 0f;  // Время последнего движения
 
+    private bool isResetting = false;
+
     public void Start()
     {
         current = transform.position;
@@ -71,9 +73,15 @@ public class PlayerMovementScript : MonoBehaviour
                 HandleInput();
         }
 
+
+        if (!isResetting)
+        {
+            score = Mathf.Max(score, (int)current.z);
+            gameStateController.score = score / 3;
+        }
         // Обновляем счёт
-        score = Mathf.Max(score, (int)current.z);
-        gameStateController.score = score / 3;
+        //score = Mathf.Max(score, (int)current.z);
+        //gameStateController.score = score / 3;
     }
 
     private void HandleInput()
@@ -230,7 +238,22 @@ public class PlayerMovementScript : MonoBehaviour
     public void GameOver()
     {
         canMove = false;
+        isResetting = true;
+
+        if (gameStateController.lives > 1)
+        {
+            score = 0;
+            gameStateController.score = 0;
+        }
+
         gameStateController.GameOver();
+        StartCoroutine(ResetScoreDelay());
+    }
+
+    private IEnumerator ResetScoreDelay()
+    {
+        yield return new WaitForSeconds(1f); // Ждём 1 секунду
+        isResetting = false; // Разрешаем снова обновлять счёт
     }
 
     public void Reset()
