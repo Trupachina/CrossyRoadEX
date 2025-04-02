@@ -51,11 +51,11 @@ public class CameraMovementScript : MonoBehaviour
                 offset.z -= speedOffsetZ * Time.deltaTime;
             }
 
-            // Проверка на Game Over
-            if (transform.position.z > player.transform.position.z - gameOverDistance)
-            {
-                GameOver();
-            }
+            //    // Проверка на Game Over
+            //if (transform.position.z > player.transform.position.z - gameOverDistance)
+            //{
+            //    GameOver();
+            //}
         }
     }
 
@@ -77,10 +77,10 @@ public class CameraMovementScript : MonoBehaviour
         StartCoroutine(DelayedCameraCatchUp()); // Снова запускаем задержку для плавного начала
     }
 
-    private void GameOver()
-    {
-        moving = false;
-        playerMovement.GameOver(); // Останавливаем игрока
-        gameStateController.GameOver(); // Активируем Game Over
-    }
+    //private void GameOver()
+    //{
+    //    moving = false;
+    //    playerMovement.GameOver(); // Останавливаем игрока
+    //    gameStateController.GameOver(); // Активируем Game Over
+    //}
 }

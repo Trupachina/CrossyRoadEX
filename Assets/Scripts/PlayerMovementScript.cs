@@ -78,6 +78,9 @@ public class PlayerMovementScript : MonoBehaviour
         {
             score = Mathf.Max(score, (int)current.z);
             gameStateController.score = score / 3;
+
+            // Проверяем, если текущий счёт выше лучшего за сеанс
+            gameStateController.maxSessionScore = Mathf.Max(gameStateController.maxSessionScore, gameStateController.score);
         }
         // Обновляем счёт
         //score = Mathf.Max(score, (int)current.z);

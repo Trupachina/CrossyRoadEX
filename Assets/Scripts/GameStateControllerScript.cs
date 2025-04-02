@@ -23,6 +23,8 @@ public class GameStateControllerScript : MonoBehaviour
     public int livesFromTicket = 3; // По умолчанию 3 жизни за жетон
     public float gameTimeLimit = 180f; // Время игры по умолчанию
 
+    public int maxSessionScore = 0; // Лучший счёт за текущий сеанс
+
     private GameObject currentCanvas;
     private string state;
     private GameObject player;
@@ -57,6 +59,8 @@ public class GameStateControllerScript : MonoBehaviour
     public GameObject InstructionsText;
     bool canStartGame = false;
 
+    private bool canRestartManually = false; // Флаг, разрешающий ручной перезапуск (после 2-3 сек.)
+
     private bool resetScoreFlag = false;
 
     public void Start()
@@ -79,10 +83,10 @@ public class GameStateControllerScript : MonoBehaviour
                 top = loadedTop;
             }
         }
-        else
-        {
-            top = PlayerPrefs.GetInt("Top", 0);
-        }
+        //else
+        //{
+        //    top = PlayerPrefs.GetInt("Top", 0);
+        //}
 
         // Отображаем лучший результат
         topScore.text = "Рекорд: " + top;
@@ -169,7 +173,7 @@ public class GameStateControllerScript : MonoBehaviour
             }
 
             // Проверка, не догнала ли камера игрока
-            CheckCameraProximity();
+            //CheckCameraProximity();
 
             //Добавляем проверку, сколько байт пришло с порта
             if (portNo.IsOpen && portNo.BytesToRead > 0)
@@ -195,57 +199,130 @@ public class GameStateControllerScript : MonoBehaviour
 
         else if (state == "mainmenu")
         {
-            // Если порт открыт и есть данные для чтения
-            if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
+            int optionSelection = PlayerPrefs.GetInt("optionSelection", 0);
+            
+            if (optionSelection != 2)
             {
-                livesText.text = "Жизни: " + 0;
-
-                Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
-                try
+                // Если порт открыт и есть данные для чтения
+                if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
                 {
-                    int byteRead = portNo.ReadByte();
+                    livesText.text = "Жизни: " + 0;
 
-                    // Если получен первый байт
-                    if (byteRead == 1 && !canStartGame)
+                    Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
+                    try
                     {
-                        // Разрешаем запуск игры
-                        canStartGame = true;
+                        int byteRead = portNo.ReadByte();
 
-                        // Показываем текст инструкций
-                        livesText.text = "Жизни: " + lives.ToString();
-                        InstructionsText.SetActive(false);
-                        StartText.SetActive(true);
-                        TopScore.SetActive(false);
+                        // Если получен первый байт
+                        if (byteRead == 1 && !canStartGame)
+                        {
+                            // Разрешаем запуск игры
+                            canStartGame = true;
 
-                        Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
+                            // Показываем текст инструкций
+                            livesText.text = "Жизни: " + lives.ToString();
+                            InstructionsText.SetActive(false);
+                            StartText.SetActive(true);
+                            TopScore.SetActive(false);
+
+                            Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
+                        }
+                        else if (byteRead == 1 && canStartGame)
+                        {
+                            // Если игра уже готова, добавляем жизни
+                            IncreaseLives();
+                            Debug.Log("Жизни увеличены.");
+                        }
                     }
-                    else if (byteRead == 1 && canStartGame)
+                    catch (System.Exception ex)
                     {
-                        // Если игра уже готова, добавляем жизни
-                        IncreaseLives();
-                        Debug.Log("Жизни увеличены.");
+                        Debug.LogError("Ошибка чтения порта: " + ex.Message);
                     }
                 }
-                catch (System.Exception ex)
+
+                // Если нажата клавиша пробел, запускаем игру
+                if (canStartGame && Input.GetKeyDown("space"))
                 {
-                    Debug.LogError("Ошибка чтения порта: " + ex.Message);
+                    Play();
+
+                    StartText.SetActive(false);
+
+                    TopScore.SetActive(false);
+
+                    // После запуска игры запрещаем повторный запуск
+                    canStartGame = false;
+
+                    Debug.Log("Игра запущена.");
+                }
+            }
+            else
+            {
+                if (Input.GetKeyDown("space"))
+                {
+                    Play();
+
+                    StartText.SetActive(false);
+
+                    TopScore.SetActive(false);
+
+                    // После запуска игры запрещаем повторный запуск
+                    canStartGame = false;
+
+                    Debug.Log("Игра запущена.");
                 }
             }
 
-            // Если нажата клавиша пробел, запускаем игру
-            if (canStartGame && Input.GetKeyDown("space"))
-            {
-                Play();
+            //// Если порт открыт и есть данные для чтения
+            //if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
+            //{
+            //    livesText.text = "Жизни: " + 0;
 
-                StartText.SetActive(false);
+            //    Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
+            //    try
+            //    {
+            //        int byteRead = portNo.ReadByte();
 
-                TopScore.SetActive(false);
+            //        // Если получен первый байт
+            //        if (byteRead == 1 && !canStartGame)
+            //        {
+            //            // Разрешаем запуск игры
+            //            canStartGame = true;
 
-                // После запуска игры запрещаем повторный запуск
-                canStartGame = false;
+            //            // Показываем текст инструкций
+            //            livesText.text = "Жизни: " + lives.ToString();
+            //            InstructionsText.SetActive(false);
+            //            StartText.SetActive(true);
+            //            TopScore.SetActive(false);
 
-                Debug.Log("Игра запущена.");
-            }
+            //            Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
+            //        }
+            //        else if (byteRead == 1 && canStartGame)
+            //        {
+            //            // Если игра уже готова, добавляем жизни
+            //            IncreaseLives();
+            //            Debug.Log("Жизни увеличены.");
+            //        }
+            //    }
+            //    catch (System.Exception ex)
+            //    {
+            //        Debug.LogError("Ошибка чтения порта: " + ex.Message);
+            //    }
+            //}
+
+            //// Если нажата клавиша пробел, запускаем игру
+            //if (canStartGame && Input.GetKeyDown("space"))
+            //{
+            //    Play();
+
+            //    StartText.SetActive(false);
+
+            //    TopScore.SetActive(false);
+
+            //    // После запуска игры запрещаем повторный запуск
+            //    canStartGame = false;
+
+            //    Debug.Log("Игра запущена.");
+            //}
 
             //if (Input.GetKeyDown("space"))
             //{
@@ -264,14 +341,20 @@ public class GameStateControllerScript : MonoBehaviour
 
         else if (state == "gameover")
         {
-            if (Input.anyKeyDown)
+            // Разрешаем ручной перезапуск только если прошло 2.5 секунды (canRestartManually == true)
+            if (canRestartManually && Input.anyKeyDown)
             {
-                SceneManager.LoadScene(0);
-                state = "mainmenu";
-                MainMenu();
-                GameObject.Find("LevelController").SendMessage("Reset");
-                player.SendMessage("Reset");
+                LoadMainScene();
             }
+
+            //if (Input.anyKeyDown)
+            //{
+            //    SceneManager.LoadScene(0);
+            //    state = "mainmenu";
+            //    MainMenu();
+            //    GameObject.Find("LevelController").SendMessage("Reset");
+            //    player.SendMessage("Reset");
+            //}
         }
 
         if (isInCooldown)
@@ -280,15 +363,15 @@ public class GameStateControllerScript : MonoBehaviour
         }
     }
 
-    private void CheckCameraProximity()
-    {
-        // Проверка расстояния между камерой и игроком
-        if (mainCamera.transform.position.z > player.transform.position.z - cameraGameOverDistance)
-        {
-            diedFromCamera = true; // Устанавливаем флаг, если камера догнала игрока
-            GameOver(); // Вызываем конец игры
-        }
-    }
+    //private void CheckCameraProximity()
+    //{
+    //    // Проверка расстояния между камерой и игроком
+    //    if (mainCamera.transform.position.z > player.transform.position.z - cameraGameOverDistance)
+    //    {
+    //        diedFromCamera = true; // Устанавливаем флаг, если камера догнала игрока
+    //        GameOver(); // Вызываем конец игры
+    //    }
+    //}
 
     public void MainMenu()
     {
@@ -312,11 +395,11 @@ public class GameStateControllerScript : MonoBehaviour
                 top = loadedTop;
             }
         }
-        else
-        {
-            // Если файла нет, загружаем из PlayerPrefs
-            top = PlayerPrefs.GetInt("Top", 0); // 0 по умолчанию
-        }
+        //else
+        //{
+        //    // Если файла нет, загружаем из PlayerPrefs
+        //    top = PlayerPrefs.GetInt("Top", 0); // 0 по умолчанию
+        //}
 
         // Выводим лучший результат
         topScore.text = "Рекорд: " + top;
@@ -353,10 +436,11 @@ public class GameStateControllerScript : MonoBehaviour
                 CurrentCanvas = gameOverCanvas;
                 state = "gameover";
                 isGameOver = true;
+                canRestartManually = false;  // Сброс флага, чтобы сначала не было возможности перезапуска
 
                 gameOverSound.Play();
 
-                gameOverScore.text = score.ToString();
+                gameOverScore.text = maxSessionScore.ToString();
 
                 if (score > top)
                 {
@@ -372,6 +456,9 @@ public class GameStateControllerScript : MonoBehaviour
                 mainCamera.GetComponent<CameraMovementScript>().moving = false;
 
                 ClosePort();  // Закрываем порт при завершении игры
+
+                // Запускаем корутину, которая через 2.5 сек позволит перезапускать, а через 10 сек — автоматом перейдет в меню
+                StartCoroutine(GameOverTransition());
             }
         }
     }
@@ -480,9 +567,45 @@ public class GameStateControllerScript : MonoBehaviour
         }
     }
 
+    private IEnumerator GameOverTransition()
+    {
+        // Ждем 2.5 секунд, чтобы дать время игроку посмотреть счёт
+        yield return new WaitForSeconds(2.5f);
+        canRestartManually = true;  // Теперь можно вручную перезапустить игру
+
+        // Ждем оставшиеся 7.5 секунд (в сумме 10 секунд)
+        yield return new WaitForSeconds(7.5f);
+
+        // Если игрок так и не перезапустил игру вручную, выполняем автоматический переход
+        if (state == "gameover")
+        {
+            LoadMainScene();
+        }
+    }
+
+    private void LoadMainScene()
+    {
+        SceneManager.LoadScene(0);
+        state = "mainmenu";
+        MainMenu();
+        GameObject.Find("LevelController").SendMessage("Reset");
+        player.SendMessage("Reset");
+    }
+
     void OnApplicationQuit()
     {
         ClosePort();  // Закрываем порт при выходе из приложения
+
+        // Удаляем сохранённый рекорд при закрытии игры
+        if (File.Exists(Application.dataPath + "/" + filename))
+        {
+            File.Delete(Application.dataPath + "/" + filename);
+            Debug.Log("Файл рекорда удалён.");
+        }
+
+        PlayerPrefs.DeleteKey("Top");
+        PlayerPrefs.Save();
+        Debug.Log("Рекорд в PlayerPrefs удалён.");
     }
 
     // Метод для увеличения количества жизней
