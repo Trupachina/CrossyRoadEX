@@ -23,6 +23,9 @@ public class PlayerMovementScript : MonoBehaviour
     private bool moving;
     private float elapsedTime;
 
+    private Quaternion targetRotation; // Целевой поворот
+    public float rotationSpeed = 720f; // Скорость поворота (градусов в секунду)
+
     private Vector3 current;
     private Vector3 target;
     private float startY;
@@ -47,6 +50,8 @@ public class PlayerMovementScript : MonoBehaviour
         body = GetComponentInChildren<Rigidbody>();
 
         mesh = GameObject.Find("Player/Chicken");
+
+        targetRotation = transform.rotation;
 
         score = 0;
         gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
@@ -82,6 +87,10 @@ public class PlayerMovementScript : MonoBehaviour
             // Проверяем, если текущий счёт выше лучшего за сеанс
             gameStateController.maxSessionScore = Mathf.Max(gameStateController.maxSessionScore, gameStateController.score);
         }
+
+        transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
+
+
         // Обновляем счёт
         //score = Mathf.Max(score, (int)current.z);
         //gameStateController.score = score / 3;
@@ -133,24 +142,24 @@ public class PlayerMovementScript : MonoBehaviour
         // Запоминаем время последнего движения
         lastMoveTime = Time.time;
 
-        // Обновляем направление игрока
-        switch (MoveDirection)
-        {
-            case "north":
-                mesh.transform.rotation = Quaternion.Euler(0, 0, 0);
-                break;
-            case "south":
-                mesh.transform.rotation = Quaternion.Euler(0, 180, 0);
-                break;
-            case "east":
-                mesh.transform.rotation = Quaternion.Euler(0, 270, 0);
-                break;
-            case "west":
-                mesh.transform.rotation = Quaternion.Euler(0, 90, 0);
-                break;
-            default:
-                break;
-        }
+        //// Обновляем направление игрока
+        //switch (MoveDirection)
+        //{
+        //    case "north":
+        //        targetRotation = Quaternion.Euler(0, 0, 0);
+        //        break;
+        //    case "south":
+        //        targetRotation = Quaternion.Euler(0, 180, 0);
+        //        break;
+        //    case "east":
+        //        targetRotation = Quaternion.Euler(0, 270, 0);
+        //        break;
+        //    case "west":
+        //        targetRotation = Quaternion.Euler(0, 90, 0);
+        //        break;
+        //    default:
+        //        break;
+        //}
 
         // Анимация движения конечностей
         foreach (var o in leftSide)

@@ -31,6 +31,7 @@ public class GameStateControllerScript : MonoBehaviour
 
     private string filename = "top.txt";
     public AudioSource gameOverSound;
+    public AudioSource MainSong;
 
     public SerialPort portNo = new SerialPort("COM6", 9600);
 
@@ -472,6 +473,7 @@ public class GameStateControllerScript : MonoBehaviour
         camera.GetComponent<CameraMovementScript>().moving = false;
 
         gameOverSound.Play();
+        MainSong.Stop();
 
         // Сброс положения камеры
         camera.GetComponent<CameraMovementScript>().Reset();
@@ -505,6 +507,8 @@ public class GameStateControllerScript : MonoBehaviour
 
         // Возвращаем камеру в движение
         camera.GetComponent<CameraMovementScript>().moving = true;
+
+        MainSong.Play();
     }
 
     private IEnumerator Cooldown()

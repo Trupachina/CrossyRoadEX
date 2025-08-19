@@ -40,16 +40,16 @@ public class GenericGridObjectGeneratorScript : MonoBehaviour
         }
     }
 
-    public void OnDestroy()
-    {
-        if (destroyWhenDestroyed)
-        {
-            foreach (var o in generatedObjects)
-            {
-                Destroy(o);
-            }
-        }
-    }
+    //public void OnDestroy()
+    //{
+    //    if (destroyWhenDestroyed)
+    //    {
+    //        foreach (var o in generatedObjects)
+    //        {
+    //            Destroy(o);
+    //        }
+    //    }
+    //}
 
     protected virtual void OnInstantiate(GameObject o)
     {

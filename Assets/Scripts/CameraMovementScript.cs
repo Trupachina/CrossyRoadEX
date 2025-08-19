@@ -24,7 +24,7 @@ public class CameraMovementScript : MonoBehaviour
         player = GameObject.FindGameObjectWithTag("Player");
         gameStateController = GameObject.Find("GameStateController").GetComponent<GameStateControllerScript>();
 
-        initialOffset = new Vector3(3.05f, 16.56f, -7.4f);
+        initialOffset = new Vector3(3.5f, 25.0f, -9.0f);
         offset = initialOffset;
 
         StartCoroutine(DelayedCameraCatchUp());
@@ -39,7 +39,14 @@ public class CameraMovementScript : MonoBehaviour
 
         if (moving && isCatchingUp) // Камера движется только после задержки
         {
-            Vector3 targetPosition = player.transform.position + offset;
+            //Vector3 targetPosition = player.transform.position + offset;
+
+            Vector3 targetPosition = new Vector3(
+    transform.position.x,          // X остаётся прежним
+    transform.position.y,          // Y остаётся прежним
+    player.transform.position.z + offset.z // Только Z обновляется
+);
+
 
             // Используем Lerp для плавного движения камеры
             transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * 3f);
@@ -51,11 +58,6 @@ public class CameraMovementScript : MonoBehaviour
                 offset.z -= speedOffsetZ * Time.deltaTime;
             }
 
-            //    // Проверка на Game Over
-            //if (transform.position.z > player.transform.position.z - gameOverDistance)
-            //{
-            //    GameOver();
-            //}
         }
     }
 
@@ -72,15 +74,8 @@ public class CameraMovementScript : MonoBehaviour
         moving = false;
         isCatchingUp = false; // Сброс догоняющего состояния
         offset = initialOffset; // Возвращаем смещение камеры в начальное положение
-        transform.position = player.transform.position + initialOffset; // Ставим камеру на начальную позицию относительно игрока
+        //transform.position = player.transform.position + initialOffset; // Ставим камеру на начальную позицию относительно игрока
 
         StartCoroutine(DelayedCameraCatchUp()); // Снова запускаем задержку для плавного начала
     }
-
-    //private void GameOver()
-    //{
-    //    moving = false;
-    //    playerMovement.GameOver(); // Останавливаем игрока
-    //    gameStateController.GameOver(); // Активируем Game Over
-    //}
 }

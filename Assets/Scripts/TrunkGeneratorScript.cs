@@ -2,63 +2,73 @@
 using System.Collections;
 using System.Collections.Generic;
 
-public class TrunkGeneratorScript : MonoBehaviour {
+public class TrunkGeneratorScript : MonoBehaviour
+{
     public enum Direction { Left = -1, Right = 1 };
 
-    public bool randomizeValues = false;
-
-    public Direction direction;
-    public float speed = 2.0f;
-    public float length = 2.0f;
-    public float interval = 2.0f;
+    [Header("Настройки спауна")]
     public float leftX = -20.0f;
     public float rightX = 20.0f;
-
     public GameObject trunkPrefab;
 
+    // --- Параметры, устанавливаются извне ---
+    private Direction direction;
+    private float speed;
+    private float length;
+    private float interval;
+
     private float elapsedTime;
+    private List<GameObject> trunks = new List<GameObject>();
+    private bool isInitialized = false;
 
-    private List<GameObject> trunks;
+    public void SetParameters(Direction dir, float speed, float length, float interval)
+    {
+        this.direction = dir;
+        this.speed = speed;
+        this.length = length;
+        this.interval = interval;
+        isInitialized = true;
+    }
 
-    public void Start() {
-	    if (randomizeValues) {
-            direction = Random.value < 0.5f ? Direction.Left : Direction.Right;
-            speed = Random.Range(2.0f, 4.0f);
-            length = Random.Range(2, 3.3f);
-            interval = length / speed + Random.Range(2f, 4f);
-        }
+    void Update()
+    {
+        if (!isInitialized) return;
 
-        elapsedTime = 0.0f;
-        trunks = new List<GameObject>();
-	}
-	
-    public void Update() {
         elapsedTime += Time.deltaTime;
 
-        if (elapsedTime > interval) {
+        if (elapsedTime > interval)
+        {
             elapsedTime = 0.0f;
 
-            var position = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.1f, 0);
-            var o = (GameObject)Instantiate(trunkPrefab, position, Quaternion.identity);
-            o.GetComponent<TrunkFloatingScript>().speedX = (int)direction * speed;
+            Vector3 spawnPos = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.1f, 0);
+            GameObject trunk = Instantiate(trunkPrefab, spawnPos, Quaternion.identity);
 
-            var scale = o.transform.localScale;
-            o.transform.localScale = new Vector3(scale.x * length, scale.y, scale.z * 3);
+            TrunkFloatingScript floating = trunk.GetComponent<TrunkFloatingScript>();
+            if (floating != null)
+                floating.speedX = (int)direction * speed;
 
-            trunks.Add(o);
+            Vector3 scale = trunk.transform.localScale;
+            trunk.transform.localScale = new Vector3(scale.x * length, scale.y, scale.z * 3);
+
+            trunks.Add(trunk);
         }
 
-        foreach (var o in trunks.ToArray()) {
-            if (direction == Direction.Left && o.transform.position.x < leftX || direction == Direction.Right && o.transform.position.x > rightX) {
-                Destroy(o);
-                trunks.Remove(o);
+        foreach (GameObject trunk in trunks.ToArray())
+        {
+            if ((direction == Direction.Left && trunk.transform.position.x < leftX) ||
+                (direction == Direction.Right && trunk.transform.position.x > rightX))
+            {
+                Destroy(trunk);
+                trunks.Remove(trunk);
             }
         }
-	}
+    }
 
-    void OnDestroy() {
-        foreach (var o in trunks) {
-            Destroy(o);
+    void OnDestroy()
+    {
+        foreach (var trunk in trunks)
+        {
+            Destroy(trunk);
         }
     }
 }
