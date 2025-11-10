@@ -33,8 +33,6 @@ public class SerialPortManager : MonoBehaviour
         }
         Instance = this;
         DontDestroyOnLoad(gameObject);
-
-        // Переносим инициализацию порта в Start
     }
 
     private void Start()
@@ -157,7 +155,32 @@ public class SerialPortManager : MonoBehaviour
             if (credit > 0)
             {
                 Debug.Log($"Получен кредит: {credit} монет(ы)");
-                OnCoinsReceived?.Invoke(credit);
+                SafeInvokeOnCoinsReceived(credit);
+            }
+        }
+    }
+
+    // Безопасный вызов события
+    private void SafeInvokeOnCoinsReceived(int credit)
+    {
+        if (OnCoinsReceived == null) return;
+
+        // Получаем список всех подписчиков
+        var handlers = OnCoinsReceived.GetInvocationList();
+
+        foreach (var handler in handlers)
+        {
+            try
+            {
+                // Пытаемся вызвать обработчик
+                ((Action<int>)handler)(credit);
+            }
+            catch (Exception ex)
+            {
+                // Если обработчик вызывает исключение (например, объект уничтожен),
+                // отписываем его от события
+                Debug.LogError($"Ошибка при вызове обработчика: {ex.Message}");
+                OnCoinsReceived -= (Action<int>)handler;
             }
         }
     }

@@ -3,7 +3,7 @@ using System.Collections;
 using UnityEngine.UI;
 using UnityEngine.SceneManagement;
 using System.IO;
-using System.IO.Ports;
+using System;
 
 public class GameStateControllerScript : MonoBehaviour
 {
@@ -19,11 +19,11 @@ public class GameStateControllerScript : MonoBehaviour
     public Text livesText;
 
     public int score, top;
-    public int lives = 3; // Количество жизней по умолчанию
-    public int livesFromTicket = 3; // По умолчанию 3 жизни за жетон
-    public float gameTimeLimit = 180f; // Время игры по умолчанию
+    public int lives = 3;
+    public int livesFromTicket = 3;
+    public float gameTimeLimit = 180f;
 
-    public int maxSessionScore = 0; // Лучший счёт за текущий сеанс
+    public int maxSessionScore = 0;
 
     private GameObject currentCanvas;
     private string state;
@@ -33,7 +33,8 @@ public class GameStateControllerScript : MonoBehaviour
     public AudioSource gameOverSound;
     public AudioSource MainSong;
 
-    public SerialPort portNo = new SerialPort("COM6", 9600);
+    // Убрали прямую работу с SerialPort
+    private SerialPortManager serialPortManager;
 
     private Vector3 lastSafePosition;
     private Vector3 lastSafeScale;
@@ -46,13 +47,11 @@ public class GameStateControllerScript : MonoBehaviour
     public float damageCooldown = 2f;
     public float deathPauseDuration = 2f;
 
-    // Флаг для отслеживания смерти от камеры и времени
     public bool diedFromCamera = false;
-    public bool diedFromTime = false; // Новый флаг для смерти от времени
+    public bool diedFromTime = false;
 
-    // Параметры камеры
     private GameObject mainCamera;
-    public float cameraGameOverDistance = -1.5f; // Определяет расстояние между камерой и игроком для смерти
+    public float cameraGameOverDistance = -1.5f;
 
     public GameObject TopScore1;
     public GameObject TopScore;
@@ -60,19 +59,30 @@ public class GameStateControllerScript : MonoBehaviour
     public GameObject InstructionsText;
     bool canStartGame = false;
 
-    private bool canRestartManually = false; // Флаг, разрешающий ручной перезапуск (после 2-3 сек.)
+    private bool canRestartManually = false;
 
     private bool resetScoreFlag = false;
 
     public void Start()
     {
-        OpenPort();  // Открываем порт
+        // Получаем ссылку на менеджер serial порта
+        serialPortManager = FindObjectOfType<SerialPortManager>();
+        if (serialPortManager == null)
+        {
+            // Создаем новый объект с менеджером, если его нет на сцене
+            GameObject portManagerObj = new GameObject("SerialPortManager");
+            serialPortManager = portManagerObj.AddComponent<SerialPortManager>();
+        }
+
+        // Подписываемся на событие получения монет
+        serialPortManager.OnCoinsReceived += HandleCoinsReceived;
+
         currentCanvas = mainMenuCanvas;
         player = GameObject.FindGameObjectWithTag("Player");
-        mainCamera = GameObject.FindGameObjectWithTag("MainCamera"); // Инициализируем камеру
+        mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
         StartText.SetActive(false);
 
-        // Читаем лучший результат из файла или PlayerPrefs
+        // Читаем лучший результат
         if (File.Exists(Application.dataPath + "/" + filename))
         {
             var sr = new StreamReader(Application.dataPath + "/" + filename);
@@ -84,17 +94,62 @@ public class GameStateControllerScript : MonoBehaviour
                 top = loadedTop;
             }
         }
-        //else
-        //{
-        //    top = PlayerPrefs.GetInt("Top", 0);
-        //}
 
-        // Отображаем лучший результат
         topScore.text = "Рекорд: " + top;
-
         topScore1.text = "Рекорд: " + top;
 
         MainMenu();
+    }
+
+    // Обработчик события получения монет
+    private void HandleCoinsReceived(int credit)
+    {
+        Debug.Log($"Получен кредит: {credit}");
+
+        // Всегда получаем актуальное значение optionSelection
+        int currentOptionSelection = PlayerPrefs.GetInt("optionSelection", 0);
+
+        if (state == "mainmenu")
+        {
+            if (currentOptionSelection == 0) // Если выбран вариант "Жетон"
+            {
+                if (!canStartGame)
+                {
+                    // Разрешаем запуск игры
+                    canStartGame = true;
+                    livesText.text = "Жизни: " + lives.ToString();
+                    InstructionsText.SetActive(false);
+                    StartText.SetActive(true);
+                    TopScore.SetActive(false);
+                    Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
+                }
+                else
+                {
+                    // Добавляем жизни
+                    IncreaseLives(credit);
+                }
+            }
+            else if (currentOptionSelection == 1) // Если выбран вариант "Купюры"
+            {
+                // Для варианта "Купюры" просто добавляем жизни
+                IncreaseLives(credit);
+            }
+            // Для варианта "Кнопка Start" (2) ничего не делаем при получении жетона
+        }
+        else if (state == "play")
+        {
+            // Добавляем жизни во время игры
+            IncreaseLives(credit);
+        }
+    }
+
+    private void OnDestroy()
+    {
+        // Отписываемся от события при уничтожении объекта
+        if (serialPortManager != null)
+        {
+            serialPortManager.OnCoinsReceived -= HandleCoinsReceived;
+        }
     }
 
     public void Update()
@@ -119,9 +174,8 @@ public class GameStateControllerScript : MonoBehaviour
                 float remainingTime = gameTimeLimit - (Time.time - gameStartTime);
                 timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
 
-                if (remainingTime < 0 && gameTimeLimit > 0)  // Если время истекло и лимит времени включен
+                if (remainingTime < 0 && gameTimeLimit > 0)
                 {
-                    // Обрабатываем истечение времени как смерть
                     lives = 0;
                     diedFromTime = true;
                     GameOver();
@@ -131,7 +185,7 @@ public class GameStateControllerScript : MonoBehaviour
 
             livesText.text = "Жизни: " + lives.ToString();
 
-            // Читаем лучший результат из файла
+            // Обновляем лучший результат
             if (File.Exists(Application.dataPath + "/" + filename))
             {
                 var sr = new StreamReader(Application.dataPath + "/" + filename);
@@ -145,23 +199,18 @@ public class GameStateControllerScript : MonoBehaviour
             }
             else
             {
-                // Если файла нет, загружаем из PlayerPrefs
-                top = PlayerPrefs.GetInt("Top", 0); // 0 по умолчанию
+                top = PlayerPrefs.GetInt("Top", 0);
             }
 
-            // Выводим лучший результат
             topScore.text = "Рекорд: " + top;
-            
             playScore.text = score.ToString();
 
-            // Проверяем, побит ли рекорд во время игры
             if (score > top)
             {
-                top = score; // Обновляем рекорд
-                topScore.text = "Рекорд: " + top; // Обновляем текст на экране
+                top = score;
+                topScore.text = "Рекорд: " + top;
                 topScore1.text = "Рекорд: " + top;
 
-                // Записываем новый рекорд в файл и PlayerPrefs
                 PlayerPrefs.SetInt("Top", top);
                 PlayerPrefs.Save();
 
@@ -172,190 +221,54 @@ public class GameStateControllerScript : MonoBehaviour
 
                 Debug.Log("Новый рекорд: " + top);
             }
-
-            // Проверка, не догнала ли камера игрока
-            //CheckCameraProximity();
-
-            //Добавляем проверку, сколько байт пришло с порта
-            if (portNo.IsOpen && portNo.BytesToRead > 0)
-            {
-                Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
-                try
-                {
-                    int byteRead = portNo.ReadByte();
-
-                    if (byteRead == 1)
-                    {
-                        IncreaseLives();
-                    }
-                    // Если игра уже запущена, увеличиваем количество жизней на значение из livesFromTicket
-                    //IncreaseLives();
-                }
-                catch (System.Exception ex)
-                {
-                    Debug.Log("Ошибка чтения порта: " + ex.Message);
-                }
-            }
         }
-
         else if (state == "mainmenu")
         {
-            int optionSelection = PlayerPrefs.GetInt("optionSelection", 0);
-            
-            if (optionSelection != 2)
+            int currentOptionSelection = PlayerPrefs.GetInt("optionSelection", 0);
+
+            if (currentOptionSelection == 0) // Жетон
             {
-                // Если порт открыт и есть данные для чтения
-                if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
-                {
-                    livesText.text = "Жизни: " + 0;
-
-                    Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
-                    try
-                    {
-                        int byteRead = portNo.ReadByte();
-
-                        // Если получен первый байт
-                        if (byteRead == 1 && !canStartGame)
-                        {
-                            // Разрешаем запуск игры
-                            canStartGame = true;
-
-                            // Показываем текст инструкций
-                            livesText.text = "Жизни: " + lives.ToString();
-                            InstructionsText.SetActive(false);
-                            StartText.SetActive(true);
-                            TopScore.SetActive(false);
-
-                            Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
-                        }
-                        else if (byteRead == 1 && canStartGame)
-                        {
-                            // Если игра уже готова, добавляем жизни
-                            IncreaseLives();
-                            Debug.Log("Жизни увеличены.");
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Debug.LogError("Ошибка чтения порта: " + ex.Message);
-                    }
-                }
-
-                // Если нажата клавиша пробел, запускаем игру
+                // Для варианта "Жетон" обрабатываем нажатие пробела только если canStartGame = true
                 if (canStartGame && Input.GetKeyDown("space"))
                 {
                     Play();
-
                     StartText.SetActive(false);
-
                     TopScore.SetActive(false);
-
-                    // После запуска игры запрещаем повторный запуск
                     canStartGame = false;
-
                     Debug.Log("Игра запущена.");
                 }
             }
-            else
+            else if (currentOptionSelection == 1) // Купюры
             {
+                // Для варианта "Купюры" не обрабатываем жетоны, но запускаем игру по пробелу
                 if (Input.GetKeyDown("space"))
                 {
                     Play();
-
                     StartText.SetActive(false);
-
                     TopScore.SetActive(false);
-
-                    // После запуска игры запрещаем повторный запуск
                     canStartGame = false;
-
                     Debug.Log("Игра запущена.");
                 }
             }
-
-            //// Если порт открыт и есть данные для чтения
-            //if (portNo != null && portNo.IsOpen && portNo.BytesToRead > 0)
-            //{
-            //    livesText.text = "Жизни: " + 0;
-
-            //    Debug.Log("Байты, доступные для чтения: " + portNo.BytesToRead);
-            //    try
-            //    {
-            //        int byteRead = portNo.ReadByte();
-
-            //        // Если получен первый байт
-            //        if (byteRead == 1 && !canStartGame)
-            //        {
-            //            // Разрешаем запуск игры
-            //            canStartGame = true;
-
-            //            // Показываем текст инструкций
-            //            livesText.text = "Жизни: " + lives.ToString();
-            //            InstructionsText.SetActive(false);
-            //            StartText.SetActive(true);
-            //            TopScore.SetActive(false);
-
-            //            Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
-            //        }
-            //        else if (byteRead == 1 && canStartGame)
-            //        {
-            //            // Если игра уже готова, добавляем жизни
-            //            IncreaseLives();
-            //            Debug.Log("Жизни увеличены.");
-            //        }
-            //    }
-            //    catch (System.Exception ex)
-            //    {
-            //        Debug.LogError("Ошибка чтения порта: " + ex.Message);
-            //    }
-            //}
-
-            //// Если нажата клавиша пробел, запускаем игру
-            //if (canStartGame && Input.GetKeyDown("space"))
-            //{
-            //    Play();
-
-            //    StartText.SetActive(false);
-
-            //    TopScore.SetActive(false);
-
-            //    // После запуска игры запрещаем повторный запуск
-            //    canStartGame = false;
-
-            //    Debug.Log("Игра запущена.");
-            //}
-
-            //if (Input.GetKeyDown("space"))
-            //{
-            //    Play();
-
-            //    StartText.SetActive(false);
-
-            //    TopScore.SetActive(false);
-
-            //    // После запуска игры запрещаем повторный запуск
-            //    canStartGame = false;
-
-            //    Debug.Log("Игра запущена.");
-            //}
+            else if (currentOptionSelection == 2) // Кнопка Start
+            {
+                // Для варианта "Кнопка Start" запускаем игру по пробелу
+                if (Input.GetKeyDown("space"))
+                {
+                    Play();
+                    StartText.SetActive(false);
+                    TopScore.SetActive(false);
+                    canStartGame = false;
+                    Debug.Log("Игра запущена.");
+                }
+            }
         }
-
         else if (state == "gameover")
         {
-            // Разрешаем ручной перезапуск только если прошло 2.5 секунды (canRestartManually == true)
             if (canRestartManually && Input.anyKeyDown)
             {
                 LoadMainScene();
             }
-
-            //if (Input.anyKeyDown)
-            //{
-            //    SceneManager.LoadScene(0);
-            //    state = "mainmenu";
-            //    MainMenu();
-            //    GameObject.Find("LevelController").SendMessage("Reset");
-            //    player.SendMessage("Reset");
-            //}
         }
 
         if (isInCooldown)
@@ -364,27 +277,37 @@ public class GameStateControllerScript : MonoBehaviour
         }
     }
 
-    //private void CheckCameraProximity()
-    //{
-    //    // Проверка расстояния между камерой и игроком
-    //    if (mainCamera.transform.position.z > player.transform.position.z - cameraGameOverDistance)
-    //    {
-    //        diedFromCamera = true; // Устанавливаем флаг, если камера догнала игрока
-    //        GameOver(); // Вызываем конец игры
-    //    }
-    //}
-
     public void MainMenu()
     {
         CurrentCanvas = mainMenuCanvas;
         state = "mainmenu";
         gameStarted = false;
-        gameStartTime = 0; // Сброс таймера при возвращении в меню
+        gameStartTime = 0;
+
+        // Сбрасываем флаг запуска при возвращении в меню
+        canStartGame = false;
+
+        // Устанавливаем текст в зависимости от выбранной опции
+        int currentOptionSelection = PlayerPrefs.GetInt("optionSelection", 0);
+        if (currentOptionSelection == 0) // Жетон
+        {
+            InstructionsText.SetActive(true);
+            StartText.SetActive(false);
+        }
+        else // Купюры или Кнопка Start
+        {
+            InstructionsText.SetActive(false);
+            StartText.SetActive(true);
+            if (currentOptionSelection == 2) // Только для "Кнопка Start" игра всегда готова к запуску
+            {
+                canStartGame = true;
+            }
+        }
 
         GameObject.Find("LevelController").SendMessage("Reset");
         player.SendMessage("Reset");
 
-        // Читаем лучший результат из файла
+        // Обновляем лучший результат
         if (File.Exists(Application.dataPath + "/" + filename))
         {
             var sr = new StreamReader(Application.dataPath + "/" + filename);
@@ -396,13 +319,7 @@ public class GameStateControllerScript : MonoBehaviour
                 top = loadedTop;
             }
         }
-        //else
-        //{
-        //    // Если файла нет, загружаем из PlayerPrefs
-        //    top = PlayerPrefs.GetInt("Top", 0); // 0 по умолчанию
-        //}
 
-        // Выводим лучший результат
         topScore.text = "Рекорд: " + top;
     }
 
@@ -412,9 +329,8 @@ public class GameStateControllerScript : MonoBehaviour
         state = "play";
         score = 0;
         isGameOver = false;
-        gameStartTime = Time.time; // Сброс таймера при начале новой игры
+        gameStartTime = Time.time;
 
-        // Количество жизней и время игры могут изменяться через меню настроек
         player.GetComponent<PlayerMovementScript>().canMove = true;
         mainCamera.GetComponent<CameraMovementScript>().moving = true;
 
@@ -437,7 +353,7 @@ public class GameStateControllerScript : MonoBehaviour
                 CurrentCanvas = gameOverCanvas;
                 state = "gameover";
                 isGameOver = true;
-                canRestartManually = false;  // Сброс флага, чтобы сначала не было возможности перезапуска
+                canRestartManually = false;
 
                 gameOverSound.Play();
 
@@ -456,9 +372,6 @@ public class GameStateControllerScript : MonoBehaviour
 
                 mainCamera.GetComponent<CameraMovementScript>().moving = false;
 
-                ClosePort();  // Закрываем порт при завершении игры
-
-                // Запускаем корутину, которая через 2.5 сек позволит перезапускать, а через 10 сек — автоматом перейдет в меню
                 StartCoroutine(GameOverTransition());
             }
         }
@@ -469,43 +382,34 @@ public class GameStateControllerScript : MonoBehaviour
         player.GetComponent<PlayerMovementScript>().canMove = false;
         GameObject camera = mainCamera;
 
-        // Останавливаем движение камеры
         camera.GetComponent<CameraMovementScript>().moving = false;
 
         gameOverSound.Play();
         MainSong.Stop();
 
-        // Сброс положения камеры
         camera.GetComponent<CameraMovementScript>().Reset();
 
         yield return new WaitForSeconds(deathPauseDuration);
 
-        // Если смерть произошла от времени, камера и игрок возвращаются на стартовые позиции
         if (diedFromTime)
         {
-            // Возвращаем игрока на стартовую позицию
             player.transform.position = lastSafePosition;
             player.transform.localScale = lastSafeScale;
 
-            // Сброс камеры на стартовую позицию
             camera.GetComponent<CameraMovementScript>().Reset();
         }
 
-        // Если смерть не была вызвана камерой или временем, восстанавливаем игрока в безопасную позицию
         if (!diedFromCamera && !diedFromTime)
         {
             player.transform.position = lastSafePosition;
             player.transform.localScale = lastSafeScale;
         }
 
-        // Сбрасываем флаги после возрождения
         diedFromCamera = false;
         diedFromTime = false;
 
-        // Возвращаем игрока в движение
         player.GetComponent<PlayerMovementScript>().canMove = true;
 
-        // Возвращаем камеру в движение
         camera.GetComponent<CameraMovementScript>().moving = true;
 
         MainSong.Play();
@@ -537,50 +441,13 @@ public class GameStateControllerScript : MonoBehaviour
         }
     }
 
-    // Открываем порт
-    private void OpenPort()
-    {
-        try
-        {
-            if (!portNo.IsOpen)
-            {
-                portNo.Open();
-                Debug.Log("Порт успешно открыт");
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Debug.Log("Ошибка при открытии порта: " + ex.Message);
-        }
-    }
-
-    // Закрываем порт
-    private void ClosePort()
-    {
-        try
-        {
-            if (portNo.IsOpen)
-            {
-                portNo.Close();
-                Debug.Log("Порт успешно закрыт");
-            }
-        }
-        catch (System.Exception ex)
-        {
-            Debug.Log("Ошибка при закрытии порта: " + ex.Message);
-        }
-    }
-
     private IEnumerator GameOverTransition()
     {
-        // Ждем 2.5 секунд, чтобы дать время игроку посмотреть счёт
         yield return new WaitForSeconds(2.5f);
-        canRestartManually = true;  // Теперь можно вручную перезапустить игру
+        canRestartManually = true;
 
-        // Ждем оставшиеся 7.5 секунд (в сумме 10 секунд)
         yield return new WaitForSeconds(7.5f);
 
-        // Если игрок так и не перезапустил игру вручную, выполняем автоматический переход
         if (state == "gameover")
         {
             LoadMainScene();
@@ -598,9 +465,13 @@ public class GameStateControllerScript : MonoBehaviour
 
     void OnApplicationQuit()
     {
-        ClosePort();  // Закрываем порт при выходе из приложения
+        // Отписываемся от события
+        if (serialPortManager != null)
+        {
+            serialPortManager.OnCoinsReceived -= HandleCoinsReceived;
+        }
 
-        // Удаляем сохранённый рекорд при закрытии игры
+        // Удаляем сохранённый рекорд
         if (File.Exists(Application.dataPath + "/" + filename))
         {
             File.Delete(Application.dataPath + "/" + filename);
@@ -613,12 +484,12 @@ public class GameStateControllerScript : MonoBehaviour
     }
 
     // Метод для увеличения количества жизней
-    private void IncreaseLives()
+    private void IncreaseLives(int credit = 1)
     {
-        // Увеличиваем количество жизней на значение из livesFromTicket
-        lives += livesFromTicket;
+        // Увеличиваем количество жизней на значение из livesFromTicket умноженное на кредиты
+        lives += livesFromTicket * credit;
         livesText.text = "Жизни: " + lives.ToString();
-        Debug.Log("Количество жизней увеличено на " + livesFromTicket + ": " + lives);
+        Debug.Log($"Количество жизней увеличено на {livesFromTicket * credit}: {lives}");
     }
 
     // Новые методы для изменения времени и жизней
