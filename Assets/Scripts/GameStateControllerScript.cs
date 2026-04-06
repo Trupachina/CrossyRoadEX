@@ -30,10 +30,12 @@ public class GameStateControllerScript : MonoBehaviour
     private GameObject player;
 
     private string filename = "top.txt";
+    private string topFilePath;
+    private const string TOP_PREF_KEY = "Top";
+
     public AudioSource gameOverSound;
     public AudioSource MainSong;
 
-    // Убрали прямую работу с SerialPort
     private SerialPortManager serialPortManager;
 
     private Vector3 lastSafePosition;
@@ -57,43 +59,42 @@ public class GameStateControllerScript : MonoBehaviour
     public GameObject TopScore;
     public GameObject StartText;
     public GameObject InstructionsText;
+
     bool canStartGame = false;
 
     private bool canRestartManually = false;
-
     private bool resetScoreFlag = false;
+
+    private bool cooldownRoutineRunning = false;
+
+    // ===== cache Text components for dynamic message (optional but fixes “не меняется”) =====
+    private Text instructionsTextComponent;
+    private Text startTextComponent;
+
+    private void Awake()
+    {
+        topFilePath = Path.Combine(Application.persistentDataPath, filename);
+    }
 
     public void Start()
     {
-        // Получаем ссылку на менеджер serial порта
         serialPortManager = FindObjectOfType<SerialPortManager>();
         if (serialPortManager == null)
         {
-            // Создаем новый объект с менеджером, если его нет на сцене
             GameObject portManagerObj = new GameObject("SerialPortManager");
             serialPortManager = portManagerObj.AddComponent<SerialPortManager>();
         }
 
-        // Подписываемся на событие получения монет
         serialPortManager.OnCoinsReceived += HandleCoinsReceived;
 
         currentCanvas = mainMenuCanvas;
         player = GameObject.FindGameObjectWithTag("Player");
         mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
-        StartText.SetActive(false);
 
-        // Читаем лучший результат
-        if (File.Exists(Application.dataPath + "/" + filename))
-        {
-            var sr = new StreamReader(Application.dataPath + "/" + filename);
-            string fileContent = sr.ReadLine();
-            sr.Close();
+        CacheMenuTextComponents();
 
-            if (int.TryParse(fileContent, out int loadedTop))
-            {
-                top = loadedTop;
-            }
-        }
+        // Загружаем рекорд
+        top = LoadTopScore();
 
         topScore.text = "Рекорд: " + top;
         topScore1.text = "Рекорд: " + top;
@@ -101,55 +102,194 @@ public class GameStateControllerScript : MonoBehaviour
         MainMenu();
     }
 
-    // Обработчик события получения монет
+    private void CacheMenuTextComponents()
+    {
+        if (InstructionsText != null)
+        {
+            instructionsTextComponent = InstructionsText.GetComponent<Text>();
+            if (instructionsTextComponent == null)
+                instructionsTextComponent = InstructionsText.GetComponentInChildren<Text>(true);
+        }
+
+        if (StartText != null)
+        {
+            startTextComponent = StartText.GetComponent<Text>();
+            if (startTextComponent == null)
+                startTextComponent = StartText.GetComponentInChildren<Text>(true);
+        }
+    }
+
+    // ====== TOP SCORE ======
+    private int LoadTopScore()
+    {
+        if (File.Exists(topFilePath))
+        {
+            try
+            {
+                string fileContent = File.ReadAllText(topFilePath).Trim();
+                if (int.TryParse(fileContent, out int loadedTop))
+                    return loadedTop;
+            }
+            catch (Exception ex)
+            {
+                Debug.LogWarning("Не удалось прочитать рекорд из файла: " + ex.Message);
+            }
+        }
+
+        return PlayerPrefs.GetInt(TOP_PREF_KEY, 0);
+    }
+
+    private void SaveTopScore(int newTop)
+    {
+        top = newTop;
+
+        PlayerPrefs.SetInt(TOP_PREF_KEY, top);
+        PlayerPrefs.Save();
+
+        try
+        {
+            File.WriteAllText(topFilePath, top.ToString());
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("Не удалось записать рекорд в файл: " + ex.Message);
+        }
+
+        if (topScore != null) topScore.text = "Рекорд: " + top;
+        if (topScore1 != null) topScore1.text = "Рекорд: " + top;
+
+        Debug.Log("Новый рекорд: " + top);
+    }
+
+    public void ResetTopScoreHard()
+    {
+        try
+        {
+            PlayerPrefs.DeleteKey(TOP_PREF_KEY);
+            PlayerPrefs.SetInt(TOP_PREF_KEY, 0);
+            PlayerPrefs.Save();
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("Не удалось сбросить PlayerPrefs рекорда: " + ex.Message);
+        }
+
+        try
+        {
+            if (File.Exists(topFilePath))
+                File.Delete(topFilePath);
+
+            File.WriteAllText(topFilePath, "0");
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("Не удалось сбросить файл рекорда (persistent): " + ex.Message);
+        }
+
+        TryDeleteFile(Path.Combine(Application.dataPath, filename));
+        TryDeleteFile(Path.Combine(Environment.CurrentDirectory, filename));
+
+        top = 0;
+        maxSessionScore = 0;
+
+        if (topScore != null) topScore.text = "Рекорд: " + top;
+        if (topScore1 != null) topScore1.text = "Рекорд: " + top;
+
+        Debug.Log("Рекорд ЖЁСТКО сброшен до 0.");
+    }
+
+    private void TryDeleteFile(string path)
+    {
+        try
+        {
+            if (!string.IsNullOrEmpty(path) && File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception ex)
+        {
+            Debug.LogWarning("Не удалось удалить файл: " + path + " | " + ex.Message);
+        }
+    }
+
+    // ===== NEW: применить режим старта (вызываем из меню настроек после смены optionSelection) =====
+    public void ApplyStartOptionFromPrefs()
+    {
+        int opt = PlayerPrefs.GetInt("optionSelection", 0);
+
+        // При смене режима сбрасываем “готовность” (кроме режима Start)
+        canStartGame = (opt == 2);
+
+        if (state == "mainmenu")
+            UpdateMainMenuStartUI(opt);
+    }
+
+    private void UpdateMainMenuStartUI(int opt)
+    {
+        // opt: 0 жетон, 1 купюры, 2 start
+        // Для жетон/купюры: пока не оплатили -> показываем инструкцию
+        // После оплаты (canStartGame=true) -> показываем StartText
+        if (opt == 0 || opt == 1)
+        {
+            if (instructionsTextComponent != null)
+                instructionsTextComponent.text = (opt == 0) ? "Вставьте жетон" : "Оплатите игру";
+
+            bool showStart = canStartGame;
+
+            if (InstructionsText != null) InstructionsText.SetActive(!showStart);
+            if (StartText != null) StartText.SetActive(showStart);
+
+            if (TopScore != null) TopScore.SetActive(!showStart);
+        }
+        else // opt == 2
+        {
+            if (startTextComponent != null)
+                startTextComponent.text = "Нажмите Start";
+
+            if (InstructionsText != null) InstructionsText.SetActive(false);
+            if (StartText != null) StartText.SetActive(true);
+
+            if (TopScore != null) TopScore.SetActive(true);
+        }
+    }
+
+    // ====== CREDITS (жетон + купюры одинаково) ======
     private void HandleCoinsReceived(int credit)
     {
         Debug.Log($"Получен кредит: {credit}");
 
-        // Всегда получаем актуальное значение optionSelection
-        int currentOptionSelection = PlayerPrefs.GetInt("optionSelection", 0);
+        int opt = PlayerPrefs.GetInt("optionSelection", 0);
+        bool isTokenOrBills = (opt == 0 || opt == 1);
 
         if (state == "mainmenu")
         {
-            if (currentOptionSelection == 0) // Если выбран вариант "Жетон"
+            if (isTokenOrBills)
             {
                 if (!canStartGame)
                 {
-                    // Разрешаем запуск игры
                     canStartGame = true;
                     livesText.text = "Жизни: " + lives.ToString();
-                    InstructionsText.SetActive(false);
-                    StartText.SetActive(true);
-                    TopScore.SetActive(false);
+
+                    // централизованно обновляем UI
+                    UpdateMainMenuStartUI(opt);
+
                     Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
                 }
                 else
                 {
-                    // Добавляем жизни
                     IncreaseLives(credit);
                 }
             }
-            else if (currentOptionSelection == 1) // Если выбран вариант "Купюры"
-            {
-                // Для варианта "Купюры" просто добавляем жизни
-                IncreaseLives(credit);
-            }
-            // Для варианта "Кнопка Start" (2) ничего не делаем при получении жетона
         }
         else if (state == "play")
         {
-            // Добавляем жизни во время игры
             IncreaseLives(credit);
         }
     }
 
     private void OnDestroy()
     {
-        // Отписываемся от события при уничтожении объекта
         if (serialPortManager != null)
-        {
             serialPortManager.OnCoinsReceived -= HandleCoinsReceived;
-        }
     }
 
     public void Update()
@@ -164,17 +304,17 @@ public class GameStateControllerScript : MonoBehaviour
                 gameStarted = true;
             }
 
-            if (gameTimeLimit == 0)
+            if (gameTimeLimit <= 0f)
             {
-                float remainingTime = gameTimeLimit + Time.time;
-                timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
+                float elapsed = Time.time - gameStartTime;
+                timerText.text = "Время: " + Mathf.Floor(elapsed).ToString();
             }
             else
             {
                 float remainingTime = gameTimeLimit - (Time.time - gameStartTime);
-                timerText.text = "Время: " + Mathf.Floor(remainingTime).ToString();
+                timerText.text = "Время: " + Mathf.Floor(Mathf.Max(0f, remainingTime)).ToString();
 
-                if (remainingTime < 0 && gameTimeLimit > 0)
+                if (remainingTime < 0f)
                 {
                     lives = 0;
                     diedFromTime = true;
@@ -185,79 +325,37 @@ public class GameStateControllerScript : MonoBehaviour
 
             livesText.text = "Жизни: " + lives.ToString();
 
-            // Обновляем лучший результат
-            if (File.Exists(Application.dataPath + "/" + filename))
-            {
-                var sr = new StreamReader(Application.dataPath + "/" + filename);
-                string fileContent = sr.ReadLine();
-                sr.Close();
+            if (topScore != null) topScore.text = "Рекорд: " + top;
+            if (topScore1 != null) topScore1.text = "Рекорд: " + top;
 
-                if (int.TryParse(fileContent, out int loadedTop))
-                {
-                    top = loadedTop;
-                }
-            }
-            else
-            {
-                top = PlayerPrefs.GetInt("Top", 0);
-            }
-
-            topScore.text = "Рекорд: " + top;
             playScore.text = score.ToString();
 
             if (score > top)
-            {
-                top = score;
-                topScore.text = "Рекорд: " + top;
-                topScore1.text = "Рекорд: " + top;
-
-                PlayerPrefs.SetInt("Top", top);
-                PlayerPrefs.Save();
-
-                using (StreamWriter sw = new StreamWriter(Application.dataPath + "/" + filename, false))
-                {
-                    sw.Write(top);
-                }
-
-                Debug.Log("Новый рекорд: " + top);
-            }
+                SaveTopScore(score);
         }
         else if (state == "mainmenu")
         {
-            int currentOptionSelection = PlayerPrefs.GetInt("optionSelection", 0);
+            int opt = PlayerPrefs.GetInt("optionSelection", 0);
 
-            if (currentOptionSelection == 0) // Жетон
+            // ВАЖНО: купюры теперь как жетон — старт только после оплаты (canStartGame)
+            if (opt == 0 || opt == 1)
             {
-                // Для варианта "Жетон" обрабатываем нажатие пробела только если canStartGame = true
                 if (canStartGame && Input.GetKeyDown("space"))
                 {
                     Play();
-                    StartText.SetActive(false);
-                    TopScore.SetActive(false);
+                    if (StartText != null) StartText.SetActive(false);
+                    if (TopScore != null) TopScore.SetActive(false);
                     canStartGame = false;
                     Debug.Log("Игра запущена.");
                 }
             }
-            else if (currentOptionSelection == 1) // Купюры
+            else if (opt == 2)
             {
-                // Для варианта "Купюры" не обрабатываем жетоны, но запускаем игру по пробелу
                 if (Input.GetKeyDown("space"))
                 {
                     Play();
-                    StartText.SetActive(false);
-                    TopScore.SetActive(false);
-                    canStartGame = false;
-                    Debug.Log("Игра запущена.");
-                }
-            }
-            else if (currentOptionSelection == 2) // Кнопка Start
-            {
-                // Для варианта "Кнопка Start" запускаем игру по пробелу
-                if (Input.GetKeyDown("space"))
-                {
-                    Play();
-                    StartText.SetActive(false);
-                    TopScore.SetActive(false);
+                    if (StartText != null) StartText.SetActive(false);
+                    if (TopScore != null) TopScore.SetActive(false);
                     canStartGame = false;
                     Debug.Log("Игра запущена.");
                 }
@@ -266,13 +364,12 @@ public class GameStateControllerScript : MonoBehaviour
         else if (state == "gameover")
         {
             if (canRestartManually && Input.anyKeyDown)
-            {
                 LoadMainScene();
-            }
         }
 
-        if (isInCooldown)
+        if (isInCooldown && !cooldownRoutineRunning)
         {
+            cooldownRoutineRunning = true;
             StartCoroutine(Cooldown());
         }
     }
@@ -284,43 +381,17 @@ public class GameStateControllerScript : MonoBehaviour
         gameStarted = false;
         gameStartTime = 0;
 
-        // Сбрасываем флаг запуска при возвращении в меню
-        canStartGame = false;
+        int opt = PlayerPrefs.GetInt("optionSelection", 0);
+        canStartGame = (opt == 2); // только Start готов сразу
 
-        // Устанавливаем текст в зависимости от выбранной опции
-        int currentOptionSelection = PlayerPrefs.GetInt("optionSelection", 0);
-        if (currentOptionSelection == 0) // Жетон
-        {
-            InstructionsText.SetActive(true);
-            StartText.SetActive(false);
-        }
-        else // Купюры или Кнопка Start
-        {
-            InstructionsText.SetActive(false);
-            StartText.SetActive(true);
-            if (currentOptionSelection == 2) // Только для "Кнопка Start" игра всегда готова к запуску
-            {
-                canStartGame = true;
-            }
-        }
+        UpdateMainMenuStartUI(opt);
 
         GameObject.Find("LevelController").SendMessage("Reset");
         player.SendMessage("Reset");
 
-        // Обновляем лучший результат
-        if (File.Exists(Application.dataPath + "/" + filename))
-        {
-            var sr = new StreamReader(Application.dataPath + "/" + filename);
-            string fileContent = sr.ReadLine();
-            sr.Close();
-
-            if (int.TryParse(fileContent, out int loadedTop))
-            {
-                top = loadedTop;
-            }
-        }
-
-        topScore.text = "Рекорд: " + top;
+        top = LoadTopScore();
+        if (topScore != null) topScore.text = "Рекорд: " + top;
+        if (topScore1 != null) topScore1.text = "Рекорд: " + top;
     }
 
     public void Play()
@@ -356,19 +427,13 @@ public class GameStateControllerScript : MonoBehaviour
                 canRestartManually = false;
 
                 gameOverSound.Play();
-
                 gameOverScore.text = maxSessionScore.ToString();
 
                 if (score > top)
-                {
-                    top = score;
-                    PlayerPrefs.SetInt("Top", top);
-                    var sw = File.CreateText(Application.dataPath + "/" + filename);
-                    sw.Write(top);
-                    sw.Close();
-                }
+                    SaveTopScore(score);
 
-                topScore.text = "Рекорд: " + top;
+                if (topScore != null) topScore.text = "Рекорд: " + top;
+                if (topScore1 != null) topScore1.text = "Рекорд: " + top;
 
                 mainCamera.GetComponent<CameraMovementScript>().moving = false;
 
@@ -395,7 +460,6 @@ public class GameStateControllerScript : MonoBehaviour
         {
             player.transform.position = lastSafePosition;
             player.transform.localScale = lastSafeScale;
-
             camera.GetComponent<CameraMovementScript>().Reset();
         }
 
@@ -409,7 +473,6 @@ public class GameStateControllerScript : MonoBehaviour
         diedFromTime = false;
 
         player.GetComponent<PlayerMovementScript>().canMove = true;
-
         camera.GetComponent<CameraMovementScript>().moving = true;
 
         MainSong.Play();
@@ -419,6 +482,7 @@ public class GameStateControllerScript : MonoBehaviour
     {
         yield return new WaitForSeconds(damageCooldown);
         isInCooldown = false;
+        cooldownRoutineRunning = false;
     }
 
     private void SavePlayerState()
@@ -433,9 +497,8 @@ public class GameStateControllerScript : MonoBehaviour
         set
         {
             if (currentCanvas != null)
-            {
                 currentCanvas.SetActive(false);
-            }
+
             currentCanvas = value;
             currentCanvas.SetActive(true);
         }
@@ -449,9 +512,7 @@ public class GameStateControllerScript : MonoBehaviour
         yield return new WaitForSeconds(7.5f);
 
         if (state == "gameover")
-        {
             LoadMainScene();
-        }
     }
 
     private void LoadMainScene()
@@ -465,46 +526,18 @@ public class GameStateControllerScript : MonoBehaviour
 
     void OnApplicationQuit()
     {
-        // Отписываемся от события
         if (serialPortManager != null)
-        {
             serialPortManager.OnCoinsReceived -= HandleCoinsReceived;
-        }
-
-        // Удаляем сохранённый рекорд
-        if (File.Exists(Application.dataPath + "/" + filename))
-        {
-            File.Delete(Application.dataPath + "/" + filename);
-            Debug.Log("Файл рекорда удалён.");
-        }
-
-        PlayerPrefs.DeleteKey("Top");
-        PlayerPrefs.Save();
-        Debug.Log("Рекорд в PlayerPrefs удалён.");
     }
 
-    // Метод для увеличения количества жизней
     private void IncreaseLives(int credit = 1)
     {
-        // Увеличиваем количество жизней на значение из livesFromTicket умноженное на кредиты
         lives += livesFromTicket * credit;
         livesText.text = "Жизни: " + lives.ToString();
         Debug.Log($"Количество жизней увеличено на {livesFromTicket * credit}: {lives}");
     }
 
-    // Новые методы для изменения времени и жизней
-    public void SetLives(int newLives)
-    {
-        lives = newLives;
-    }
-
-    public void SetLivesFromTicket(int newLivesFromTicket)
-    {
-        livesFromTicket = newLivesFromTicket;
-    }
-
-    public void SetGameTimeLimit(float newTimeLimit)
-    {
-        gameTimeLimit = newTimeLimit;
-    }
+    public void SetLives(int newLives) { lives = newLives; }
+    public void SetLivesFromTicket(int newLivesFromTicket) { livesFromTicket = newLivesFromTicket; }
+    public void SetGameTimeLimit(float newTimeLimit) { gameTimeLimit = newTimeLimit; }
 }

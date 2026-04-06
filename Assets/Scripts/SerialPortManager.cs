@@ -15,14 +15,44 @@ public class SerialPortManager : MonoBehaviour
     private bool portIsOpen = false;
     private bool portInitialized = false;
 
-    // Буфер для приема пакетов
     private byte[] packetBuffer = new byte[6];
     private int bufferIndex = 0;
     private float lastPacketTime = 0f;
     private const float PACKET_TIMEOUT = 1.5f;
 
-    // Событие для получения монет
     public event Action<int> OnCoinsReceived;
+
+    // ===== NEW: статус для UI =====
+    private string lastErrorMessage = "";
+
+    public bool IsPortOpen
+    {
+        get { return portIsOpen && port != null && port.IsOpen; }
+    }
+
+    public bool IsInitialized
+    {
+        get { return portInitialized; }
+    }
+
+    public string PortName
+    {
+        get { return comPort; }
+    }
+
+    public string LastErrorMessage
+    {
+        get { return lastErrorMessage; }
+    }
+
+    public float SecondsSinceLastPacket
+    {
+        get
+        {
+            if (!IsPortOpen) return float.PositiveInfinity;
+            return Time.time - lastPacketTime;
+        }
+    }
 
     private void Awake()
     {
@@ -78,6 +108,7 @@ public class SerialPortManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Ошибка при чтении файла конфигурации: {ex.Message}");
+            lastErrorMessage = ex.Message;
         }
     }
 
@@ -97,11 +128,13 @@ public class SerialPortManager : MonoBehaviour
             port.Open();
             portIsOpen = true;
             portInitialized = true;
+            lastErrorMessage = "";
             Debug.Log($"Serial Port {comPort} успешно открыт");
         }
         catch (Exception ex)
         {
             Debug.LogError($"Ошибка при открытии порта: {ex.Message}");
+            lastErrorMessage = ex.Message;
             portIsOpen = false;
             portInitialized = false;
         }
@@ -139,6 +172,7 @@ public class SerialPortManager : MonoBehaviour
         catch (Exception ex)
         {
             Debug.LogError($"Ошибка при чтении порта: {ex.Message}");
+            lastErrorMessage = ex.Message;
             bufferIndex = 0;
         }
     }
@@ -160,25 +194,20 @@ public class SerialPortManager : MonoBehaviour
         }
     }
 
-    // Безопасный вызов события
     private void SafeInvokeOnCoinsReceived(int credit)
     {
         if (OnCoinsReceived == null) return;
 
-        // Получаем список всех подписчиков
         var handlers = OnCoinsReceived.GetInvocationList();
 
         foreach (var handler in handlers)
         {
             try
             {
-                // Пытаемся вызвать обработчик
                 ((Action<int>)handler)(credit);
             }
             catch (Exception ex)
             {
-                // Если обработчик вызывает исключение (например, объект уничтожен),
-                // отписываем его от события
                 Debug.LogError($"Ошибка при вызове обработчика: {ex.Message}");
                 OnCoinsReceived -= (Action<int>)handler;
             }
@@ -192,10 +221,22 @@ public class SerialPortManager : MonoBehaviour
 
     private void CloseSerialPort()
     {
-        if (port != null && port.IsOpen)
+        try
         {
-            port.Close();
-            Debug.Log("Serial Port закрыт");
+            if (port != null && port.IsOpen)
+            {
+                port.Close();
+                Debug.Log("Serial Port закрыт");
+            }
+        }
+        catch (Exception ex)
+        {
+            lastErrorMessage = ex.Message;
+        }
+        finally
+        {
+            portIsOpen = false;
+            portInitialized = false;
         }
     }
 

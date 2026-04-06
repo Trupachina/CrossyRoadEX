@@ -78,7 +78,6 @@ public class PlayerMovementScript : MonoBehaviour
                 HandleInput();
         }
 
-
         if (!isResetting)
         {
             score = Mathf.Max(score, (int)current.z);
@@ -89,7 +88,6 @@ public class PlayerMovementScript : MonoBehaviour
         }
 
         transform.rotation = Quaternion.RotateTowards(transform.rotation, targetRotation, rotationSpeed * Time.deltaTime);
-
 
         // Обновляем счёт
         //score = Mathf.Max(score, (int)current.z);
@@ -141,25 +139,6 @@ public class PlayerMovementScript : MonoBehaviour
 
         // Запоминаем время последнего движения
         lastMoveTime = Time.time;
-
-        //// Обновляем направление игрока
-        //switch (MoveDirection)
-        //{
-        //    case "north":
-        //        targetRotation = Quaternion.Euler(0, 0, 0);
-        //        break;
-        //    case "south":
-        //        targetRotation = Quaternion.Euler(0, 180, 0);
-        //        break;
-        //    case "east":
-        //        targetRotation = Quaternion.Euler(0, 270, 0);
-        //        break;
-        //    case "west":
-        //        targetRotation = Quaternion.Euler(0, 90, 0);
-        //        break;
-        //    default:
-        //        break;
-        //}
 
         // Анимация движения конечностей
         foreach (var o in leftSide)
