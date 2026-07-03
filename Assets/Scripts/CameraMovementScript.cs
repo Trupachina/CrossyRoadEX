@@ -18,6 +18,7 @@ public class CameraMovementScript : MonoBehaviour
     private Vector3 offset;
     private Vector3 initialOffset;
     private bool isCatchingUp = false;
+    private Coroutine delayedCatchUpRoutine;
 
     public void Start()
     {
@@ -27,55 +28,64 @@ public class CameraMovementScript : MonoBehaviour
         initialOffset = new Vector3(3.5f, 25.0f, -9.0f);
         offset = initialOffset;
 
-        StartCoroutine(DelayedCameraCatchUp());
+        RestartCatchUpDelay();
     }
 
     public void Update()
     {
-        if (Menu.activeInHierarchy)
+        if (Menu != null && Menu.activeInHierarchy)
         {
             return; // Если меню открыто, камера не двигается
         }
 
+        if (player == null)
+            player = GameObject.FindGameObjectWithTag("Player");
+
+        if (player == null)
+            return;
+
         if (moving && isCatchingUp) // Камера движется только после задержки
         {
-            //Vector3 targetPosition = player.transform.position + offset;
-
             Vector3 targetPosition = new Vector3(
-    transform.position.x,          // X остаётся прежним
-    transform.position.y,          // Y остаётся прежним
-    player.transform.position.z + offset.z // Только Z обновляется
-);
+                transform.position.x,
+                transform.position.y,
+                player.transform.position.z + offset.z
+            );
 
-
-            // Используем Lerp для плавного движения камеры
             transform.position = Vector3.Lerp(transform.position, targetPosition, Time.deltaTime * 3f);
 
             offset.z += speedIncrementZ * Time.deltaTime;
 
-            if (playerMovement.IsMoving && playerMovement.MoveDirection == "north")
+            if (playerMovement != null && playerMovement.IsMoving && playerMovement.MoveDirection == "north")
             {
                 offset.z -= speedOffsetZ * Time.deltaTime;
             }
-
         }
     }
 
-
-    IEnumerator DelayedCameraCatchUp()
+    private IEnumerator DelayedCameraCatchUp()
     {
         yield return new WaitForSeconds(1.0f); // Задержка на 1 секунду
         isCatchingUp = true; // Камера начинает двигаться
+        delayedCatchUpRoutine = null;
+    }
+
+    private void RestartCatchUpDelay()
+    {
+        if (delayedCatchUpRoutine != null)
+        {
+            StopCoroutine(delayedCatchUpRoutine);
+            delayedCatchUpRoutine = null;
+        }
+
+        delayedCatchUpRoutine = StartCoroutine(DelayedCameraCatchUp());
     }
 
     public void Reset()
     {
-        // Останавливаем движение камеры
         moving = false;
-        isCatchingUp = false; // Сброс догоняющего состояния
-        offset = initialOffset; // Возвращаем смещение камеры в начальное положение
-        //transform.position = player.transform.position + initialOffset; // Ставим камеру на начальную позицию относительно игрока
-
-        StartCoroutine(DelayedCameraCatchUp()); // Снова запускаем задержку для плавного начала
+        isCatchingUp = false;
+        offset = initialOffset;
+        RestartCatchUpDelay();
     }
 }

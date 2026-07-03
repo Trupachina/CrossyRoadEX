@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
 
 public class TrunkGeneratorScript : MonoBehaviour
@@ -11,14 +10,13 @@ public class TrunkGeneratorScript : MonoBehaviour
     public float rightX = 20.0f;
     public GameObject trunkPrefab;
 
-    // --- Параметры, устанавливаются извне ---
     private Direction direction;
     private float speed;
     private float length;
     private float interval;
 
     private float elapsedTime;
-    private List<GameObject> trunks = new List<GameObject>();
+    private List<GameObject> trunks = new List<GameObject>(16);
     private bool isInitialized = false;
 
     public void SetParameters(Direction dir, float speed, float length, float interval)
@@ -40,7 +38,7 @@ public class TrunkGeneratorScript : MonoBehaviour
         {
             elapsedTime = 0.0f;
 
-            Vector3 spawnPos = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.1f, 0);
+            Vector3 spawnPos = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.1f, 0f);
             GameObject trunk = Instantiate(trunkPrefab, spawnPos, Quaternion.identity);
 
             TrunkFloatingScript floating = trunk.GetComponent<TrunkFloatingScript>();
@@ -48,27 +46,42 @@ public class TrunkGeneratorScript : MonoBehaviour
                 floating.speedX = (int)direction * speed;
 
             Vector3 scale = trunk.transform.localScale;
-            trunk.transform.localScale = new Vector3(scale.x * length, scale.y, scale.z * 3);
+            trunk.transform.localScale = new Vector3(scale.x * length, scale.y, scale.z * 3f);
 
             trunks.Add(trunk);
         }
 
-        foreach (GameObject trunk in trunks.ToArray())
+        for (int i = trunks.Count - 1; i >= 0; i--)
         {
-            if ((direction == Direction.Left && trunk.transform.position.x < leftX) ||
-                (direction == Direction.Right && trunk.transform.position.x > rightX))
+            GameObject trunk = trunks[i];
+
+            if (trunk == null)
+            {
+                trunks.RemoveAt(i);
+                continue;
+            }
+
+            bool shouldDestroy =
+                (direction == Direction.Left && trunk.transform.position.x < leftX) ||
+                (direction == Direction.Right && trunk.transform.position.x > rightX);
+
+            if (shouldDestroy)
             {
                 Destroy(trunk);
-                trunks.Remove(trunk);
+                trunks.RemoveAt(i);
             }
         }
     }
 
     void OnDestroy()
     {
-        foreach (var trunk in trunks)
+        if (trunks == null)
+            return;
+
+        for (int i = trunks.Count - 1; i >= 0; i--)
         {
-            Destroy(trunk);
+            if (trunks[i] != null)
+                Destroy(trunks[i]);
         }
     }
 }

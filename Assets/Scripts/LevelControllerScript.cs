@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
 
 public class LevelControllerScript : MonoBehaviour
@@ -9,108 +8,362 @@ public class LevelControllerScript : MonoBehaviour
     public int lineBehind = 20;
     public float destroyDelay = 5f;
 
-    public GameObject[] linePrefabs;      // Обычные линии
-    public GameObject railroadLine;       // Префаб железной дороги
+    [Header("Line Prefabs")]
+    public GameObject[] linePrefabs;
+    public GameObject railroadLine;
     [Range(0f, 1f)]
     public float railroadChance = 0.05f;
 
-    private Dictionary<int, GameObject> lines;
-    private GameObject player;
+    [Header("Camera Return Protection")]
+    public int cameraReturnLinesBehind = 10;
+    public int cameraReturnLinesAhead = 18;
 
-    private bool lastWaterDirectionRight = false; // для шахматной логики
+    [Header("Respawn Trim")]
+    public int respawnTrimKeepBehind = 10;
+    public int respawnTrimKeepAhead = 30;
+
+    private const float LineSpacing = 3f;
+    private const float LineOffsetZ = -5f;
+    private const int DestroyBatchPerFrame = 8;
+
+    private sealed class LineConfig
+    {
+        public bool isRailroad;
+        public int linePrefabIndex;
+        public bool isWater;
+        public TrunkGeneratorScript.Direction waterDirection;
+        public float waterSpeed;
+        public float waterLength;
+        public float waterInterval;
+    }
+
+    private Dictionary<int, GameObject> lines;
+    private Dictionary<int, LineConfig> lineConfigs;
+    private HashSet<int> queuedDestroyKeys;
+    private List<int> destroyBuffer;
+
+    private GameObject player;
+    private GameObject mainCamera;
+
+    private bool lastWaterDirectionRight = false;
+    private bool keepCameraWindowDuringRespawn = false;
 
     public void Start()
     {
-        player = GameObject.FindGameObjectWithTag("Player");
-        lines = new Dictionary<int, GameObject>();
+        CacheSceneObjects();
+
+        if (lines == null)
+            lines = new Dictionary<int, GameObject>(128);
+        else
+            lines.Clear();
+
+        if (lineConfigs == null)
+            lineConfigs = new Dictionary<int, LineConfig>(256);
+        else
+            lineConfigs.Clear();
+
+        if (queuedDestroyKeys == null)
+            queuedDestroyKeys = new HashSet<int>();
+        else
+            queuedDestroyKeys.Clear();
+
+        if (destroyBuffer == null)
+            destroyBuffer = new List<int>(256);
+        else
+            destroyBuffer.Clear();
+
+        lastWaterDirectionRight = false;
+        keepCameraWindowDuringRespawn = false;
+
+        ClampInspectorValues();
+
+        if (player != null)
+            EnsureWindowAroundWorldZ(player.transform.position.z);
     }
 
     public void Update()
     {
-        int playerZ = (int)player.transform.position.z;
+        CacheSceneObjects();
+        ClampInspectorValues();
 
-        for (int z = Mathf.Max(minZ, playerZ - lineBehind); z <= playerZ + lineAhead; z += 1)
+        if (player == null)
+            return;
+
+        int playerLine = WorldZToLineIndex(player.transform.position.z);
+        int playerMin = Mathf.Max(minZ, playerLine - lineBehind);
+        int playerMax = playerLine + lineAhead;
+
+        EnsureLineRange(playerMin, playerMax);
+
+        bool hasSecondRange = false;
+        int secondMin = 0;
+        int secondMax = 0;
+
+        if (keepCameraWindowDuringRespawn && mainCamera != null)
         {
-            if (!lines.ContainsKey(z))
-            {
-                GameObject line;
-                Vector3 position = new Vector3(0, 0, z * 3 - 5);
+            int cameraLine = WorldZToLineIndex(mainCamera.transform.position.z);
+            secondMin = Mathf.Max(minZ, cameraLine - cameraReturnLinesBehind);
+            secondMax = cameraLine + cameraReturnLinesAhead;
+            EnsureLineRange(secondMin, secondMax);
+            hasSecondRange = true;
+        }
 
-                if (Random.value < railroadChance)
+        QueueDestroyOutsideRanges(playerMin, playerMax, hasSecondRange, secondMin, secondMax);
+        ProcessDestroyQueue(DestroyBatchPerFrame);
+    }
+
+    public void EnsureWindowAroundWorldZ(float worldZ)
+    {
+        int centerLine = WorldZToLineIndex(worldZ);
+        EnsureLineRange(Mathf.Max(minZ, centerLine - lineBehind), centerLine + lineAhead);
+    }
+
+    public void BeginRespawnCameraProtection()
+    {
+        keepCameraWindowDuringRespawn = true;
+        EnsureRespawnWindowsNow();
+    }
+
+    public void EnsureRespawnWindowsNow()
+    {
+        CacheSceneObjects();
+        ClampInspectorValues();
+
+        if (player != null)
+        {
+            int playerLine = WorldZToLineIndex(player.transform.position.z);
+            EnsureLineRange(Mathf.Max(minZ, playerLine - lineBehind), playerLine + lineAhead);
+        }
+
+        if (keepCameraWindowDuringRespawn && mainCamera != null)
+        {
+            int cameraLine = WorldZToLineIndex(mainCamera.transform.position.z);
+            EnsureLineRange(Mathf.Max(minZ, cameraLine - cameraReturnLinesBehind), cameraLine + cameraReturnLinesAhead);
+        }
+    }
+
+    public void EndRespawnCameraProtection()
+    {
+        keepCameraWindowDuringRespawn = false;
+    }
+
+    public void TrimAroundWorldZ(float worldZ)
+    {
+        TrimAroundWorldZ(worldZ, respawnTrimKeepBehind, respawnTrimKeepAhead);
+    }
+
+    public void TrimAroundWorldZ(float worldZ, int keepBehind, int keepAhead)
+    {
+        int safeKeepBehind = Mathf.Max(0, keepBehind);
+        int safeKeepAhead = Mathf.Max(0, keepAhead);
+
+        int centerLine = WorldZToLineIndex(worldZ);
+        int keepMin = Mathf.Max(minZ, centerLine - safeKeepBehind);
+        int keepMax = centerLine + safeKeepAhead;
+
+        QueueDestroyOutsideRanges(keepMin, keepMax, false, 0, 0);
+        ProcessDestroyQueue(DestroyBatchPerFrame);
+    }
+
+    private void CacheSceneObjects()
+    {
+        if (player == null)
+            player = GameObject.FindGameObjectWithTag("Player");
+
+        if (mainCamera == null)
+            mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
+    }
+
+    private void ClampInspectorValues()
+    {
+        if (lineAhead < 0)
+            lineAhead = 0;
+
+        if (lineBehind < 0)
+            lineBehind = 0;
+
+        if (cameraReturnLinesBehind < 0)
+            cameraReturnLinesBehind = 0;
+
+        if (cameraReturnLinesAhead < 0)
+            cameraReturnLinesAhead = 0;
+
+        if (respawnTrimKeepBehind < 0)
+            respawnTrimKeepBehind = 0;
+
+        if (respawnTrimKeepAhead < 0)
+            respawnTrimKeepAhead = 0;
+    }
+
+    private void EnsureLineRange(int startLine, int endLine)
+    {
+        for (int lineIndex = startLine; lineIndex <= endLine; lineIndex++)
+        {
+            if (!lines.ContainsKey(lineIndex))
+                SpawnLine(lineIndex);
+        }
+    }
+
+    private void QueueDestroyOutsideRanges(int firstMin, int firstMax, bool hasSecondRange, int secondMin, int secondMax)
+    {
+        destroyBuffer.Clear();
+
+        foreach (KeyValuePair<int, GameObject> kv in lines)
+        {
+            int key = kv.Key;
+
+            bool inFirstRange = key >= firstMin && key <= firstMax;
+            bool inSecondRange = hasSecondRange && key >= secondMin && key <= secondMax;
+
+            if (!inFirstRange && !inSecondRange && !queuedDestroyKeys.Contains(key))
+                destroyBuffer.Add(key);
+        }
+
+        for (int i = 0; i < destroyBuffer.Count; i++)
+            queuedDestroyKeys.Add(destroyBuffer[i]);
+    }
+
+    private void ProcessDestroyQueue(int batchSize)
+    {
+        if (queuedDestroyKeys == null || queuedDestroyKeys.Count == 0)
+            return;
+
+        destroyBuffer.Clear();
+
+        foreach (int key in queuedDestroyKeys)
+        {
+            destroyBuffer.Add(key);
+            if (destroyBuffer.Count >= batchSize)
+                break;
+        }
+
+        for (int i = 0; i < destroyBuffer.Count; i++)
+        {
+            int key = destroyBuffer[i];
+            queuedDestroyKeys.Remove(key);
+
+            GameObject line;
+            if (!lines.TryGetValue(key, out line))
+                continue;
+
+            lines.Remove(key);
+
+            if (line != null)
+                Destroy(line);
+        }
+    }
+
+    private void SpawnLine(int lineIndex)
+    {
+        LineConfig config = GetOrCreateLineConfig(lineIndex);
+        Vector3 position = new Vector3(0f, 0f, LineIndexToWorldZ(lineIndex));
+
+        GameObject line;
+
+        if (config.isRailroad)
+        {
+            line = Instantiate(railroadLine, position, Quaternion.identity);
+        }
+        else
+        {
+            line = Instantiate(linePrefabs[config.linePrefabIndex], position, Quaternion.identity);
+            line.transform.localScale = new Vector3(1f, 1f, 3f);
+
+            if (config.isWater)
+            {
+                TrunkGeneratorScript trunkGenerator = line.GetComponent<TrunkGeneratorScript>();
+                if (trunkGenerator != null)
                 {
-                    line = Instantiate(railroadLine, position, Quaternion.identity);
-                }
-                else
-                {
-                    line = Instantiate(
-                        linePrefabs[Random.Range(0, linePrefabs.Length)],
-                        position,
-                        Quaternion.identity
+                    trunkGenerator.SetParameters(
+                        config.waterDirection,
+                        config.waterSpeed,
+                        config.waterLength,
+                        config.waterInterval
                     );
-                    line.transform.localScale = new Vector3(1, 1, 3);
-
-                    if (line.CompareTag("WaterLine"))
-                    {
-                        TrunkGeneratorScript trunkGenerator = line.GetComponent<TrunkGeneratorScript>();
-                        if (trunkGenerator != null)
-                        {
-                            // чередуем направление
-                            TrunkGeneratorScript.Direction dir = lastWaterDirectionRight
-                                ? TrunkGeneratorScript.Direction.Left
-                                : TrunkGeneratorScript.Direction.Right;
-
-                            //trunkGenerator.SetForcedDirection(dir);
-                            lastWaterDirectionRight = !lastWaterDirectionRight;
-
-                            // Рандомизация параметров
-                            float speed = Random.Range(2.0f, 4.0f);
-                            float length = Random.Range(2.0f, 3.3f);
-                            float interval = length / speed + Random.Range(2f, 4f);
-
-                            trunkGenerator.SetParameters(dir, speed, length, interval);
-                        }
-                    }
                 }
-
-                lines.Add(z, line);
             }
         }
 
-        foreach (var line in new List<GameObject>(lines.Values))
+        lines[lineIndex] = line;
+    }
+
+    private LineConfig GetOrCreateLineConfig(int lineIndex)
+    {
+        LineConfig config;
+        if (lineConfigs.TryGetValue(lineIndex, out config))
+            return config;
+
+        config = new LineConfig();
+
+        if (Random.value < railroadChance)
         {
-            float lineZ = line.transform.position.z;
-            if (lineZ < playerZ - lineBehind * 3 && !IsCoroutineRunning(line))
+            config.isRailroad = true;
+            config.linePrefabIndex = -1;
+        }
+        else
+        {
+            config.isRailroad = false;
+            config.linePrefabIndex = Random.Range(0, linePrefabs.Length);
+
+            GameObject prefab = linePrefabs[config.linePrefabIndex];
+            config.isWater = prefab != null && prefab.GetComponent<TrunkGeneratorScript>() != null;
+
+            if (config.isWater)
             {
-                StartCoroutine(DestroyLineWithDelay(line, (int)(lineZ / 3 + 1.67f)));
+                config.waterDirection = lastWaterDirectionRight
+                    ? TrunkGeneratorScript.Direction.Left
+                    : TrunkGeneratorScript.Direction.Right;
+
+                lastWaterDirectionRight = !lastWaterDirectionRight;
+
+                config.waterSpeed = Random.Range(2.0f, 4.0f);
+                config.waterLength = Random.Range(2.0f, 3.3f);
+                config.waterInterval = config.waterLength / config.waterSpeed + Random.Range(2f, 4f);
             }
         }
+
+        lineConfigs[lineIndex] = config;
+        return config;
     }
 
-    private bool IsCoroutineRunning(GameObject line)
+    private static int WorldZToLineIndex(float worldZ)
     {
-        return line.GetComponent<LineDestroyer>() != null;
+        return Mathf.RoundToInt((worldZ - LineOffsetZ) / LineSpacing);
     }
 
-    private IEnumerator DestroyLineWithDelay(GameObject line, int lineZ)
+    private static float LineIndexToWorldZ(int lineIndex)
     {
-        var destroyer = line.AddComponent<LineDestroyer>();
-        yield return new WaitForSeconds(destroyDelay);
-        lines.Remove(lineZ);
-        Destroy(line);
+        return lineIndex * LineSpacing + LineOffsetZ;
     }
 
     public void Reset()
     {
         if (lines != null)
         {
-            foreach (var line in new List<GameObject>(lines.Values))
+            foreach (KeyValuePair<int, GameObject> kv in lines)
             {
-                Destroy(line);
+                if (kv.Value != null)
+                    Destroy(kv.Value);
             }
             lines.Clear();
-            Start();
         }
+
+        if (lineConfigs != null)
+            lineConfigs.Clear();
+
+        if (queuedDestroyKeys != null)
+            queuedDestroyKeys.Clear();
+
+        if (destroyBuffer != null)
+            destroyBuffer.Clear();
+
+        lastWaterDirectionRight = false;
+        keepCameraWindowDuringRespawn = false;
+
+        ClampInspectorValues();
+        CacheSceneObjects();
+
+        if (player != null)
+            EnsureWindowAroundWorldZ(player.transform.position.z);
     }
 }
-
-public class LineDestroyer : MonoBehaviour { }

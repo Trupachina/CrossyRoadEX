@@ -1,5 +1,4 @@
 ﻿using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
 
 public class RoadCarGenerator : MonoBehaviour {
@@ -16,7 +15,6 @@ public class RoadCarGenerator : MonoBehaviour {
     public GameObject[] carPrefabs;
 
     private float elapsedTime;
-
     private List<GameObject> cars;
 
     public void Start() {
@@ -27,7 +25,11 @@ public class RoadCarGenerator : MonoBehaviour {
         }
 
         elapsedTime = 0.0f;
-        cars = new List<GameObject>();
+
+        if (cars == null)
+            cars = new List<GameObject>(16);
+        else
+            cars.Clear();
     }
 
     public void Update() {
@@ -36,30 +38,44 @@ public class RoadCarGenerator : MonoBehaviour {
         if (elapsedTime > interval) {
             elapsedTime = 0.0f;
 
-            // TODO extract 0.375f and -0.5f to outside -- probably along with genericization
-            var position = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.6f, 0);
-            var o = (GameObject)Instantiate(carPrefabs[Random.Range(0, carPrefabs.Length)], position, Quaternion.Euler(0, 0, 0));
+            Vector3 position = transform.position + new Vector3(direction == Direction.Left ? rightX : leftX, 0.6f, 0f);
+            GameObject o = Instantiate(carPrefabs[Random.Range(0, carPrefabs.Length)], position, Quaternion.Euler(0f, 0f, 0f));
             o.GetComponent<CarScript>().speedX = (int)direction * speed;
 
             if (direction < 0)
-                o.transform.rotation = Quaternion.Euler(0, 270, 0);
+                o.transform.rotation = Quaternion.Euler(0f, 270f, 0f);
             else
-                o.transform.rotation = Quaternion.Euler(0, 90, 0);
-            
+                o.transform.rotation = Quaternion.Euler(0f, 90f, 0f);
+
             cars.Add(o);
         }
 
-        foreach (var o in cars.ToArray()) {
-            if (direction == Direction.Left && o.transform.position.x < leftX || direction == Direction.Right && o.transform.position.x > rightX) {
+        for (int i = cars.Count - 1; i >= 0; i--) {
+            GameObject o = cars[i];
+
+            if (o == null) {
+                cars.RemoveAt(i);
+                continue;
+            }
+
+            bool shouldDestroy =
+                (direction == Direction.Left && o.transform.position.x < leftX) ||
+                (direction == Direction.Right && o.transform.position.x > rightX);
+
+            if (shouldDestroy) {
                 Destroy(o);
-                cars.Remove(o);
+                cars.RemoveAt(i);
             }
         }
     }
 
     public void OnDestroy() {
-        foreach (var o in cars) {
-            Destroy(o);
+        if (cars == null)
+            return;
+
+        for (int i = cars.Count - 1; i >= 0; i--) {
+            if (cars[i] != null)
+                Destroy(cars[i]);
         }
     }
 }

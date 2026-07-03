@@ -33,10 +33,34 @@ public class GameStateControllerScript : MonoBehaviour
     private string topFilePath;
     private const string TOP_PREF_KEY = "Top";
 
+    [Header("Звуки")]
     public AudioSource gameOverSound;
+
+    [Header("Музыка")]
+    [Tooltip("Старое поле музыки. Оставлено для совместимости. Если MenuSong или GameSong не назначены, будет использоваться MainSong.")]
     public AudioSource MainSong;
 
+    [Tooltip("Музыка главного меню. Играет периодически: 20 секунд музыка, 180 секунд тишина.")]
+    public AudioSource MenuSong;
+
+    [Tooltip("Основная музыка во время игры.")]
+    public AudioSource GameSong;
+
+    [Header("Периодическая музыка главного меню")]
+    [Tooltip("Если включено, музыка главного меню играет периодически: играет, затем тишина, затем снова играет.")]
+    [SerializeField] private bool useIntermittentMenuMusic = true;
+
+    [Tooltip("Сколько секунд музыка главного меню играет при первом запуске и каждом повторе.")]
+    [SerializeField] private float menuMusicPlaySeconds = 20f;
+
+    [Tooltip("Сколько секунд длится тишина между повторами музыки главного меню.")]
+    [SerializeField] private float menuMusicSilentSeconds = 180f;
+
+    private Coroutine menuMusicRoutine;
+
     private SerialPortManager serialPortManager;
+    private LevelControllerScript levelController;
+    private CameraMovementScript cameraMovement;
 
     private Vector3 lastSafePosition;
     private Vector3 lastSafeScale;
@@ -66,8 +90,11 @@ public class GameStateControllerScript : MonoBehaviour
     private bool resetScoreFlag = false;
 
     private bool cooldownRoutineRunning = false;
+    private Coroutine respawnCleanupRoutine;
 
-    // ===== cache Text components for dynamic message (optional but fixes “не меняется”) =====
+    private const float CameraReturnReleaseDistance = 14f;
+    private const float CameraReturnTimeout = 8f;
+
     private Text instructionsTextComponent;
     private Text startTextComponent;
 
@@ -90,16 +117,28 @@ public class GameStateControllerScript : MonoBehaviour
         currentCanvas = mainMenuCanvas;
         player = GameObject.FindGameObjectWithTag("Player");
         mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
+        CacheControllers();
 
         CacheMenuTextComponents();
 
-        // Загружаем рекорд
         top = LoadTopScore();
 
         topScore.text = "Рекорд: " + top;
         topScore1.text = "Рекорд: " + top;
 
         MainMenu();
+    }
+
+    private void CacheControllers()
+    {
+        if (levelController == null)
+            levelController = FindObjectOfType<LevelControllerScript>();
+
+        if (mainCamera == null)
+            mainCamera = GameObject.FindGameObjectWithTag("MainCamera");
+
+        if (cameraMovement == null && mainCamera != null)
+            cameraMovement = mainCamera.GetComponent<CameraMovementScript>();
     }
 
     private void CacheMenuTextComponents()
@@ -119,7 +158,6 @@ public class GameStateControllerScript : MonoBehaviour
         }
     }
 
-    // ====== TOP SCORE ======
     private int LoadTopScore()
     {
         if (File.Exists(topFilePath))
@@ -211,12 +249,9 @@ public class GameStateControllerScript : MonoBehaviour
         }
     }
 
-    // ===== NEW: применить режим старта (вызываем из меню настроек после смены optionSelection) =====
     public void ApplyStartOptionFromPrefs()
     {
         int opt = PlayerPrefs.GetInt("optionSelection", 0);
-
-        // При смене режима сбрасываем “готовность” (кроме режима Start)
         canStartGame = (opt == 2);
 
         if (state == "mainmenu")
@@ -225,9 +260,6 @@ public class GameStateControllerScript : MonoBehaviour
 
     private void UpdateMainMenuStartUI(int opt)
     {
-        // opt: 0 жетон, 1 купюры, 2 start
-        // Для жетон/купюры: пока не оплатили -> показываем инструкцию
-        // После оплаты (canStartGame=true) -> показываем StartText
         if (opt == 0 || opt == 1)
         {
             if (instructionsTextComponent != null)
@@ -237,22 +269,19 @@ public class GameStateControllerScript : MonoBehaviour
 
             if (InstructionsText != null) InstructionsText.SetActive(!showStart);
             if (StartText != null) StartText.SetActive(showStart);
-
             if (TopScore != null) TopScore.SetActive(!showStart);
         }
-        else // opt == 2
+        else
         {
             if (startTextComponent != null)
                 startTextComponent.text = "Нажмите Start";
 
             if (InstructionsText != null) InstructionsText.SetActive(false);
             if (StartText != null) StartText.SetActive(true);
-
             if (TopScore != null) TopScore.SetActive(true);
         }
     }
 
-    // ====== CREDITS (жетон + купюры одинаково) ======
     private void HandleCoinsReceived(int credit)
     {
         Debug.Log($"Получен кредит: {credit}");
@@ -268,10 +297,7 @@ public class GameStateControllerScript : MonoBehaviour
                 {
                     canStartGame = true;
                     livesText.text = "Жизни: " + lives.ToString();
-
-                    // централизованно обновляем UI
                     UpdateMainMenuStartUI(opt);
-
                     Debug.Log("Игра готова к запуску. Нажмите пробел для старта.");
                 }
                 else
@@ -288,6 +314,8 @@ public class GameStateControllerScript : MonoBehaviour
 
     private void OnDestroy()
     {
+        StopMenuMusicLoop(true);
+
         if (serialPortManager != null)
             serialPortManager.OnCoinsReceived -= HandleCoinsReceived;
     }
@@ -337,7 +365,6 @@ public class GameStateControllerScript : MonoBehaviour
         {
             int opt = PlayerPrefs.GetInt("optionSelection", 0);
 
-            // ВАЖНО: купюры теперь как жетон — старт только после оплаты (canStartGame)
             if (opt == 0 || opt == 1)
             {
                 if (canStartGame && Input.GetKeyDown("space"))
@@ -379,14 +406,25 @@ public class GameStateControllerScript : MonoBehaviour
         CurrentCanvas = mainMenuCanvas;
         state = "mainmenu";
         gameStarted = false;
-        gameStartTime = 0;
+        gameStartTime = 0f;
+        isGameOver = false;
+
+        StopRespawnCleanupRoutine();
+        CacheControllers();
+
+        StopGameMusic();
+        StartMenuMusicLoop();
 
         int opt = PlayerPrefs.GetInt("optionSelection", 0);
-        canStartGame = (opt == 2); // только Start готов сразу
+        canStartGame = (opt == 2);
 
         UpdateMainMenuStartUI(opt);
 
-        GameObject.Find("LevelController").SendMessage("Reset");
+        if (levelController != null)
+            levelController.Reset();
+        else
+            GameObject.Find("LevelController").SendMessage("Reset");
+
         player.SendMessage("Reset");
 
         top = LoadTopScore();
@@ -396,20 +434,30 @@ public class GameStateControllerScript : MonoBehaviour
 
     public void Play()
     {
+        StopRespawnCleanupRoutine();
+        CacheControllers();
+
+        StopMenuMusicLoop(true);
+        StartGameMusic();
+
         CurrentCanvas = playCanvas;
         state = "play";
         score = 0;
         isGameOver = false;
+        gameStarted = false;
         gameStartTime = Time.time;
 
         player.GetComponent<PlayerMovementScript>().canMove = true;
-        mainCamera.GetComponent<CameraMovementScript>().moving = true;
+        if (cameraMovement != null)
+            cameraMovement.moving = true;
 
         SavePlayerState();
     }
 
     public void GameOver()
     {
+        CacheControllers();
+
         if (!isInCooldown)
         {
             lives--;
@@ -421,12 +469,19 @@ public class GameStateControllerScript : MonoBehaviour
             }
             else
             {
+                StopRespawnCleanupRoutine();
+
+                StopMenuMusicLoop(true);
+                StopGameMusic();
+
                 CurrentCanvas = gameOverCanvas;
                 state = "gameover";
                 isGameOver = true;
                 canRestartManually = false;
 
-                gameOverSound.Play();
+                if (gameOverSound != null)
+                    gameOverSound.Play();
+
                 gameOverScore.text = maxSessionScore.ToString();
 
                 if (score > top)
@@ -435,7 +490,8 @@ public class GameStateControllerScript : MonoBehaviour
                 if (topScore != null) topScore.text = "Рекорд: " + top;
                 if (topScore1 != null) topScore1.text = "Рекорд: " + top;
 
-                mainCamera.GetComponent<CameraMovementScript>().moving = false;
+                if (cameraMovement != null)
+                    cameraMovement.moving = false;
 
                 StartCoroutine(GameOverTransition());
             }
@@ -444,15 +500,21 @@ public class GameStateControllerScript : MonoBehaviour
 
     private IEnumerator DeathPause()
     {
-        player.GetComponent<PlayerMovementScript>().canMove = false;
-        GameObject camera = mainCamera;
+        CacheControllers();
 
-        camera.GetComponent<CameraMovementScript>().moving = false;
+        PlayerMovementScript playerMovement = player.GetComponent<PlayerMovementScript>();
+        playerMovement.canMove = false;
 
-        gameOverSound.Play();
-        MainSong.Stop();
+        if (cameraMovement != null)
+        {
+            cameraMovement.moving = false;
+            cameraMovement.Reset();
+        }
 
-        camera.GetComponent<CameraMovementScript>().Reset();
+        if (gameOverSound != null)
+            gameOverSound.Play();
+
+        StopGameMusic();
 
         yield return new WaitForSeconds(deathPauseDuration);
 
@@ -460,7 +522,6 @@ public class GameStateControllerScript : MonoBehaviour
         {
             player.transform.position = lastSafePosition;
             player.transform.localScale = lastSafeScale;
-            camera.GetComponent<CameraMovementScript>().Reset();
         }
 
         if (!diedFromCamera && !diedFromTime)
@@ -469,13 +530,68 @@ public class GameStateControllerScript : MonoBehaviour
             player.transform.localScale = lastSafeScale;
         }
 
+        StopRespawnCleanupRoutine();
+
+        if (levelController != null)
+        {
+            levelController.BeginRespawnCameraProtection();
+            levelController.EnsureRespawnWindowsNow();
+        }
+
         diedFromCamera = false;
         diedFromTime = false;
 
-        player.GetComponent<PlayerMovementScript>().canMove = true;
-        camera.GetComponent<CameraMovementScript>().moving = true;
+        playerMovement.canMove = true;
 
-        MainSong.Play();
+        if (cameraMovement != null)
+            cameraMovement.moving = true;
+
+        StartGameMusic();
+
+        respawnCleanupRoutine = StartCoroutine(ReleaseRespawnProtectionAfterCameraReturns());
+    }
+
+    private IEnumerator ReleaseRespawnProtectionAfterCameraReturns()
+    {
+        CacheControllers();
+
+        float waitTimer = 0f;
+
+        while (waitTimer < CameraReturnTimeout)
+        {
+            if (levelController != null)
+                levelController.EnsureRespawnWindowsNow();
+
+            if (player != null && mainCamera != null)
+            {
+                float distanceZ = Mathf.Abs(mainCamera.transform.position.z - player.transform.position.z);
+                if (distanceZ <= CameraReturnReleaseDistance)
+                    break;
+            }
+
+            waitTimer += Time.deltaTime;
+            yield return null;
+        }
+
+        if (levelController != null)
+        {
+            levelController.EndRespawnCameraProtection();
+            levelController.TrimAroundWorldZ(player.transform.position.z);
+        }
+
+        respawnCleanupRoutine = null;
+    }
+
+    private void StopRespawnCleanupRoutine()
+    {
+        if (respawnCleanupRoutine != null)
+        {
+            StopCoroutine(respawnCleanupRoutine);
+            respawnCleanupRoutine = null;
+        }
+
+        if (levelController != null)
+            levelController.EndRespawnCameraProtection();
     }
 
     private IEnumerator Cooldown()
@@ -517,6 +633,10 @@ public class GameStateControllerScript : MonoBehaviour
 
     private void LoadMainScene()
     {
+        StopRespawnCleanupRoutine();
+        StopMenuMusicLoop(true);
+        StopGameMusic();
+
         SceneManager.LoadScene(0);
         state = "mainmenu";
         MainMenu();
@@ -524,8 +644,131 @@ public class GameStateControllerScript : MonoBehaviour
         player.SendMessage("Reset");
     }
 
+    // ===================== МУЗЫКА =====================
+
+    private AudioSource GetMenuMusicSource()
+    {
+        if (MenuSong != null)
+            return MenuSong;
+
+        return MainSong;
+    }
+
+    private AudioSource GetGameMusicSource()
+    {
+        if (GameSong != null)
+            return GameSong;
+
+        return MainSong;
+    }
+
+    private void StartMenuMusicLoop()
+    {
+        StopMenuMusicLoop(true);
+
+        AudioSource source = GetMenuMusicSource();
+
+        if (source == null)
+        {
+            Debug.LogWarning("GameStateControllerScript: не назначена музыка главного меню. Назначь MenuSong или MainSong.");
+            return;
+        }
+
+        if (!useIntermittentMenuMusic)
+        {
+            source.Stop();
+            source.time = 0f;
+            source.loop = true;
+            source.Play();
+            return;
+        }
+
+        menuMusicRoutine = StartCoroutine(MenuMusicLoopCoroutine());
+    }
+
+    private IEnumerator MenuMusicLoopCoroutine()
+    {
+        while (state == "mainmenu")
+        {
+            AudioSource source = GetMenuMusicSource();
+
+            if (source == null)
+                yield break;
+
+            source.Stop();
+            source.time = 0f;
+            source.loop = true;
+            source.Play();
+
+            float playSeconds = Mathf.Max(0f, menuMusicPlaySeconds);
+
+            if (playSeconds > 0f)
+                yield return new WaitForSecondsRealtime(playSeconds);
+
+            source = GetMenuMusicSource();
+
+            if (source != null && source.isPlaying)
+                source.Stop();
+
+            float silentSeconds = Mathf.Max(0f, menuMusicSilentSeconds);
+
+            if (silentSeconds > 0f)
+                yield return new WaitForSecondsRealtime(silentSeconds);
+            else
+                yield return null;
+        }
+
+        menuMusicRoutine = null;
+    }
+
+    private void StopMenuMusicLoop(bool stopAudioSource)
+    {
+        if (menuMusicRoutine != null)
+        {
+            StopCoroutine(menuMusicRoutine);
+            menuMusicRoutine = null;
+        }
+
+        if (!stopAudioSource)
+            return;
+
+        AudioSource source = GetMenuMusicSource();
+
+        if (source != null && source.isPlaying)
+            source.Stop();
+    }
+
+    private void StartGameMusic()
+    {
+        StopMenuMusicLoop(true);
+
+        AudioSource source = GetGameMusicSource();
+
+        if (source == null)
+        {
+            Debug.LogWarning("GameStateControllerScript: не назначена игровая музыка. Назначь GameSong или MainSong.");
+            return;
+        }
+
+        source.Stop();
+        source.time = 0f;
+        source.loop = true;
+        source.Play();
+    }
+
+    private void StopGameMusic()
+    {
+        AudioSource source = GetGameMusicSource();
+
+        if (source != null && source.isPlaying)
+            source.Stop();
+    }
+
     void OnApplicationQuit()
     {
+        StopMenuMusicLoop(true);
+        StopGameMusic();
+
         if (serialPortManager != null)
             serialPortManager.OnCoinsReceived -= HandleCoinsReceived;
     }

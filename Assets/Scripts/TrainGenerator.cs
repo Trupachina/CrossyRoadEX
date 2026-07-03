@@ -1,5 +1,4 @@
 using UnityEngine;
-using System.Collections;
 using System.Collections.Generic;
 
 public class TrainGenerator : MonoBehaviour
@@ -24,7 +23,11 @@ public class TrainGenerator : MonoBehaviour
 
     public void Start()
     {
-        trains = new List<GameObject>();
+        if (trains == null)
+            trains = new List<GameObject>(4);
+        else
+            trains.Clear();
+
         ScheduleNextTrain();
         UpdateAudioVolumeFromPrefs();
     }
@@ -33,7 +36,6 @@ public class TrainGenerator : MonoBehaviour
     {
         timer += Time.deltaTime;
 
-        // Обновляем громкость на случай изменения уровня звука во время игры
         UpdateAudioVolumeFromPrefs();
 
         if (!warningPlayed && timer >= nextTrainTime - 5f)
@@ -49,12 +51,20 @@ public class TrainGenerator : MonoBehaviour
             SpawnTrain();
         }
 
-        foreach (var train in trains.ToArray())
+        for (int i = trains.Count - 1; i >= 0; i--)
         {
+            GameObject train = trains[i];
+
+            if (train == null)
+            {
+                trains.RemoveAt(i);
+                continue;
+            }
+
             if (train.transform.position.x > destroyX + 10f)
             {
                 Destroy(train);
-                trains.Remove(train);
+                trains.RemoveAt(i);
             }
         }
     }
@@ -68,7 +78,12 @@ public class TrainGenerator : MonoBehaviour
     {
         Vector3 spawnPosition = new Vector3(spawnX, 0.6f, transform.position.z + 1.8f);
         GameObject train = Instantiate(trainPrefab, spawnPosition, Quaternion.Euler(0, 90, 0));
-        train.AddComponent<TrainMover>().Initialize(speed);
+
+        TrainMover mover = train.GetComponent<TrainMover>();
+        if (mover == null)
+            mover = train.AddComponent<TrainMover>();
+
+        mover.Initialize(speed);
         trains.Add(train);
 
         if (railFlasher != null)
@@ -106,9 +121,13 @@ public class TrainGenerator : MonoBehaviour
 
     public void OnDestroy()
     {
-        foreach (var t in trains)
+        if (trains == null)
+            return;
+
+        for (int i = trains.Count - 1; i >= 0; i--)
         {
-            Destroy(t);
+            if (trains[i] != null)
+                Destroy(trains[i]);
         }
     }
 }
